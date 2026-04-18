@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(p, encoding='utf-8'\\).read\\(\\)\\) for p in ['backend/app/core/timing.py','backend/app/main.py','backend/app/routers/pipeline.py','eval/lib/metrics.py','eval/lib/reporter.py','eval/lib/backend_path.py','eval/runners/eval_llm.py','eval/runners/eval_stt.py','eval/runners/eval_tts.py','eval/runners/eval_latency.py','eval/runners/baseline.py']]; print\\('OK'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(npx --yes --prefer-offline eslint --no-eslintrc --parser-options=ecmaVersion:2022,sourceType:module,ecmaFeatures:{jsx:true} src/audio/streamingPlayer.js src/services/voiceWsClient.js src/components/VoiceAssistant.jsx)",
+      "Bash(node --check src/audio/streamingPlayer.js src/services/voiceWsClient.js)",
+      "Bash(node -e ' *)",
+      "Bash(npx --yes --prefer-offline eslint src/audio/streamingPlayer.js src/services/voiceWsClient.js src/components/VoiceAssistant.jsx)",
+      "Bash(npx --yes --prefer-offline eslint src/components/VoiceAssistant.jsx src/services/voiceWsClient.js src/audio/streamingPlayer.js)",
+      "Bash(python -m pytest backend/tests -q)",
+      "Bash(npx --yes --prefer-offline eslint src/audio/streamingPlayer.js src/audio/clientVad.js src/audio/microphoneStream.js src/services/voiceWsClient.js src/components/VoiceAssistant.jsx src/components/ConsentGate.jsx)",
+      "Bash(npx --yes --prefer-offline eslint src/audio/streamingPlayer.js src/audio/clientVad.js src/audio/microphoneStream.js src/services/voiceWsClient.js src/services/consent.js src/components/VoiceAssistant.jsx src/components/ConsentGate.jsx)"
+    ]
+  }
+}

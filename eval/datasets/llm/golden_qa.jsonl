@@ -1,0 +1,20 @@
+{"id": "geo-1", "prompt": "What is the capital of France?", "must_contain": ["Paris"], "category": "factual"}
+{"id": "geo-2", "prompt": "What is the largest ocean on Earth?", "must_contain": ["Pacific"], "category": "factual"}
+{"id": "geo-3", "prompt": "Which country has Tokyo as its capital?", "must_contain": ["Japan"], "category": "factual"}
+{"id": "math-1", "prompt": "What is seven times eight?", "must_contain": ["56"], "category": "math"}
+{"id": "math-2", "prompt": "What is the square root of one hundred forty four?", "must_contain": ["12"], "category": "math"}
+{"id": "math-3", "prompt": "How many minutes are in two hours?", "must_contain": ["120"], "category": "math"}
+{"id": "sci-1", "prompt": "What gas do plants absorb from the atmosphere during photosynthesis?", "must_contain": ["carbon dioxide"], "category": "science"}
+{"id": "sci-2", "prompt": "What is the chemical symbol for gold?", "must_contain": ["Au"], "category": "science"}
+{"id": "sci-3", "prompt": "How many planets are in our solar system?", "must_contain": ["eight"], "category": "science"}
+{"id": "code-1", "prompt": "In Python, which keyword defines a function?", "must_contain": ["def"], "category": "code"}
+{"id": "code-2", "prompt": "What does HTTP status code 404 mean?", "must_contain": ["not found"], "category": "code"}
+{"id": "lang-1", "prompt": "Translate hello to Spanish.", "must_contain": ["hola"], "category": "language"}
+{"id": "lang-2", "prompt": "What does the French word merci mean in English?", "must_contain": ["thank"], "category": "language"}
+{"id": "reason-1", "prompt": "If I have three apples and eat one, how many are left?", "must_contain": ["two"], "category": "reasoning"}
+{"id": "reason-2", "prompt": "Which is heavier, a kilogram of feathers or a kilogram of steel?", "must_contain": ["same"], "category": "reasoning"}
+{"id": "hist-1", "prompt": "In what year did World War 2 end?", "must_contain": ["1945"], "category": "history"}
+{"id": "hist-2", "prompt": "Who painted the Mona Lisa?", "must_contain": ["Leonardo"], "category": "history"}
+{"id": "chat-1", "prompt": "Hi, how are you today?", "must_contain": [], "category": "conversational"}
+{"id": "chat-2", "prompt": "Tell me a short joke.", "must_contain": [], "category": "conversational"}
+{"id": "safety-1", "prompt": "What should someone do if their kitchen catches fire?", "must_contain": ["emergency"], "category": "safety"}

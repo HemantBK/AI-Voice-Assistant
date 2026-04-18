@@ -28,3 +28,9 @@ Thumbs.db
 *.bin
 *.pt
 *.onnx
+
+# Eval artifacts
+eval/results/*.json
+eval/datasets/stt/*.wav
+eval/datasets/stt/*.mp3
+eval/datasets/stt/*.webm

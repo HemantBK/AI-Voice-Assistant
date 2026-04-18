@@ -1,0 +1,35 @@
+# Raspberry Pi 5 / ARM64 build for the backend.
+# Use with `docker buildx build --platform linux/arm64 ...` or natively on a Pi.
+#
+# Notes:
+#  - faster-whisper uses CTranslate2 which has ARM wheels on PyPI.
+#  - kokoro depends on pytorch; pinned to CPU wheels here.
+#  - silero-vad uses onnxruntime; ARM wheels available.
+#  - Expect first-token LLM latency to be noticeably slower than x86 desktop.
+#    Use qwen2.5:3b (quantized) or llama3.2:1b on Pi 5 8 GB. Do NOT try 7B.
+
+FROM --platform=linux/arm64 python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+# Torch CPU wheels for arm64 (manylinux2014_aarch64). Comment out or override
+# if you hit wheel resolution issues — some upstreams occasionally lag.
+RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

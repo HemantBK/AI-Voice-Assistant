@@ -6,8 +6,9 @@ python-multipart==0.0.20
 # Speech-to-Text
 faster-whisper==1.1.0
 
-# LLM
+# LLM (one of: groq for cloud, ollama for local — both can stay installed)
 groq==0.15.0
+ollama>=0.4.0
 
 # Text-to-Speech
 kokoro>=0.3.0
@@ -16,3 +17,11 @@ numpy>=1.26.0
 
 # WebSocket support
 websockets>=14.1
+
+# Server-side VAD for continuous mic mode (Phase B.4). Lazy-imported; safe to
+# omit if you only use the push-to-talk one-shot path.
+silero-vad>=5.1
+
+# Dev / test (Phase F)
+pytest>=8.0
+pytest-asyncio>=0.23

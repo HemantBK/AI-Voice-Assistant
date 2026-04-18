@@ -2,7 +2,9 @@
 
 A full-stack, real-time voice assistant built entirely with **free and open-source tools** — no credit card, no API costs, no trial expiry.
 
-Speak naturally, get intelligent responses spoken back to you. Powered by Faster-Whisper (STT) + Groq/Llama 3.3 70B (LLM) + Kokoro (TTS).
+Speak naturally, get intelligent responses spoken back to you. Powered by Faster-Whisper (STT) + a swappable LLM backend (Ollama/Qwen2.5 by default for fully-local mode, Groq/Llama 3.3 70B optional) + Kokoro (TTS).
+
+> **Local-first by default.** Set `LLM_PROVIDER=ollama` (the default in `.env.example`) and the entire pipeline — STT, LLM, TTS — runs on your machine. No API keys, no network calls, no data leaves the box. See [docs/adr/0002-llm-provider-abstraction.md](docs/adr/0002-llm-provider-abstraction.md) for the design.
 
 ```
  You speak         AI listens         AI thinks          AI speaks
@@ -40,8 +42,10 @@ Speak naturally, get intelligent responses spoken back to you. Powered by Faster
 ## Features
 
 - **Real-time voice conversation** — talk naturally, hear AI responses spoken aloud
+- **100% offline mode** — Ollama + Qwen2.5 (Apache-2.0) by default; no API key, nothing phones home
+- **Pluggable LLM** — swap between local (Ollama) and cloud (Groq) with one env var
 - **Speech-to-Text** — Faster-Whisper with 99+ language support, 7.75% WER
-- **LLM-powered responses** — Groq API running Llama 3.3 70B at ~80ms time-to-first-token
+- **LLM-powered responses** — Qwen2.5 3B locally, or Groq Llama 3.3 70B at ~80ms TTFT
 - **Natural text-to-speech** — Kokoro TTS, 82M params, <0.3s latency
 - **WebSocket streaming** — real-time bidirectional communication
 - **Conversation memory** — maintains context across turns (last 20 messages)
@@ -181,6 +185,33 @@ Before you start, make sure you have:
 ---
 
 ## Quick Start
+
+### Option A — Fully local (recommended, no sign-up)
+
+Easiest path is `docker compose up` — it pulls and runs Ollama, downloads `qwen2.5:3b` on first boot, then starts the backend and frontend.
+
+```bash
+git clone https://github.com/YOUR_USERNAME/ai-voice-assistant.git
+cd ai-voice-assistant
+cp backend/.env.example backend/.env   # defaults to LLM_PROVIDER=ollama
+docker compose up
+```
+
+Or run Ollama natively (no Docker needed):
+
+```bash
+# Install Ollama once: https://ollama.com
+ollama pull qwen2.5:3b           # ~2 GB; runs comfortably on 8 GB RAM
+cd backend && pip install -r requirements.txt && python run.py
+# in another shell:
+cd frontend && npm install && npm run dev
+```
+
+Want a bigger/better model? Set `OLLAMA_MODEL=qwen2.5:7b` (or `llama3.1:8b`) in `backend/.env` and `ollama pull` it.
+
+### Option B — Cloud LLM via Groq (fast, free tier, requires sign-up)
+
+Set `LLM_PROVIDER=groq` in `backend/.env` and add your `GROQ_API_KEY`. Then follow the original steps below.
 
 ### 1. Clone the Repository
 

@@ -1,0 +1,4 @@
+{
+  "_comment": "Add your STT test fixtures here. Each entry: {id, audio, reference, language}. Audio paths are relative to this file. See README.md in this directory.",
+  "samples": []
+}

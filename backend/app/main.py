@@ -1,26 +1,31 @@
-import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import stt, chat, tts, pipeline
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+from app.config import ALLOWED_ORIGINS, LOG_FORMAT, LOG_LEVEL
+from app.core.auth import APIKeyMiddleware
+from app.core.logging import configure as configure_logging
+from app.core.rate_limit import RateLimitMiddleware
+from app.core.timing import TimingMiddleware
+from app.routers import chat, pipeline, stt, tts
+
+configure_logging(LOG_FORMAT, LOG_LEVEL)
 
 app = FastAPI(
     title="AI Voice Assistant API",
-    description="Free AI Voice Assistant - STT (Faster-Whisper) + LLM (Groq) + TTS (Kokoro)",
+    description="Local-first voice assistant — STT + LLM + TTS, streaming over WebSocket.",
     version="1.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "x-api-key"],
 )
+app.add_middleware(APIKeyMiddleware)
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(TimingMiddleware)
 
 app.include_router(stt.router)
 app.include_router(chat.router)
@@ -39,7 +44,7 @@ async def root():
             "chat": "POST /api/chat/",
             "tts": "POST /api/tts/synthesize",
             "pipeline": "POST /api/pipeline",
-            "websocket": "WS /ws/voice",
+            "websocket": "WS /ws/voice (?stream=1&continuous=1 optional)",
         },
     }
 
@@ -47,3 +52,10 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.get("/ready")
+async def ready():
+    # Lightweight readiness check. Real checks (provider reachability,
+    # model availability) are in the followups list.
+    return {"status": "ready"}

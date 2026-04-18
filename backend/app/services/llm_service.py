@@ -1,66 +1,35 @@
+"""Public LLM API. Routes to the active provider (groq or ollama) selected by
+LLM_PROVIDER. The chat / chat_stream signatures are unchanged from earlier
+versions so routers don't need updating."""
+from __future__ import annotations
+
 import logging
-from groq import Groq
-from app.config import GROQ_API_KEY, LLM_MODEL, SYSTEM_PROMPT
+from typing import Iterator
+
+from app.config import SYSTEM_PROMPT
+from app.services.llm import get_provider
 
 logger = logging.getLogger(__name__)
 
-_client = None
 
-
-def get_client():
-    global _client
-    if _client is None:
-        if not GROQ_API_KEY:
-            raise ValueError("GROQ_API_KEY is not set. Get a free key at https://console.groq.com")
-        _client = Groq(api_key=GROQ_API_KEY)
-    return _client
+def _build_messages(user_message: str, history: list[dict] | None) -> list[dict]:
+    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
+    return messages
 
 
 def chat(user_message: str, conversation_history: list[dict] | None = None) -> str:
-    """Send a message to the LLM and get a response."""
-    client = get_client()
-
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
-    if conversation_history:
-        messages.extend(conversation_history)
-
-    messages.append({"role": "user", "content": user_message})
-
-    logger.info(f"Sending to Groq ({LLM_MODEL}): {user_message[:100]}...")
-
-    completion = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=messages,
-        temperature=0.7,
-        max_tokens=256,
-    )
-
-    response = completion.choices[0].message.content
-    logger.info(f"Groq response: {response[:100]}...")
+    provider = get_provider()
+    messages = _build_messages(user_message, conversation_history)
+    logger.info(f"[{provider.name}:{provider.model}] -> {user_message[:80]!r}")
+    response = provider.chat(messages)
+    logger.info(f"[{provider.name}] <- {response[:80]!r}")
     return response
 
 
-def chat_stream(user_message: str, conversation_history: list[dict] | None = None):
-    """Stream a response from the LLM, yielding chunks."""
-    client = get_client()
-
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
-    if conversation_history:
-        messages.extend(conversation_history)
-
-    messages.append({"role": "user", "content": user_message})
-
-    stream = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=messages,
-        temperature=0.7,
-        max_tokens=256,
-        stream=True,
-    )
-
-    for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            yield delta
+def chat_stream(user_message: str, conversation_history: list[dict] | None = None) -> Iterator[str]:
+    provider = get_provider()
+    messages = _build_messages(user_message, conversation_history)
+    yield from provider.chat_stream(messages)
