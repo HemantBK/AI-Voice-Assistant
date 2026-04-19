@@ -1,34 +1,7 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-dotenv==1.0.1
-python-multipart==0.0.20
-
-# Speech-to-Text
-faster-whisper==1.1.0
-
-# LLM (one of: groq for cloud, ollama for local — both can stay installed)
-groq==0.15.0
-ollama>=0.4.0
-
-# Text-to-Speech
-kokoro>=0.3.0
-soundfile>=0.12.1
-numpy>=1.26.0
-
-# WebSocket support
-websockets>=14.1
-
-# Server-side VAD for continuous mic mode (Phase B.4). Lazy-imported; safe to
-# omit if you only use the push-to-talk one-shot path.
-silero-vad>=5.1
-
-# Observability (Phase G.2). All optional — backend still runs without them,
-# OTEL_ENABLED=false by default.
-opentelemetry-api>=1.27
-opentelemetry-sdk>=1.27
-opentelemetry-exporter-otlp-proto-http>=1.27
-opentelemetry-instrumentation-fastapi>=0.48b0
-
-# Dev / test (Phase F)
-pytest>=8.0
-pytest-asyncio>=0.23
+# Source of truth for dependencies is pyproject.toml.
+# This file is kept for the Docker build and for users who prefer
+# `pip install -r requirements.txt`. It installs the full runtime stack
+# (audio + LLM providers + observability). CI and lean local setups
+# should use pyproject extras directly:
+#     pip install -e ".[dev,observability]"
+-e .[llm,audio,observability]

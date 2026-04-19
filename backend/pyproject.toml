@@ -1,5 +1,94 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# -----------------------------------------------------------------------------
+# Project metadata + dependency groups.
+#
+# Single source of truth for "what does this backend depend on". CI, Docker,
+# and local devs all install subsets of these extras rather than maintaining
+# separate package lists.
+#
+# Install recipes:
+#   Docker runtime:  pip install -e ".[llm,audio,observability]"
+#   CI (tests only): pip install -e ".[dev,observability]"
+#   Local full:      pip install -e ".[all]"
+# -----------------------------------------------------------------------------
+
+[project]
+name = "voice-assistant-backend"
+version = "1.0.0"
+description = "Local-first streaming voice assistant backend (FastAPI + WebSocket)."
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{ name = "Voice Assistant contributors" }]
+# Intentionally no `readme` field — setuptools refuses paths outside the
+# package directory, and we don't want a duplicate README in backend/. The
+# project README lives at the repo root.
+
+# Core runtime — the FastAPI app starts and responds to /health with just these.
+# Actual voice pipeline needs the audio + llm extras too; split intentional so
+# CI can test middleware / auth / streaming plumbing without GBs of ML wheels.
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "python-dotenv==1.0.1",
+    "python-multipart==0.0.20",
+    "websockets>=14.1",
+]
+
+[project.optional-dependencies]
+
+# STT / TTS / VAD. Heavy wheels (torch, onnx, model weights) — skip in CI.
+audio = [
+    "faster-whisper==1.1.0",
+    "kokoro>=0.3.0",
+    "soundfile>=0.12.1",
+    "numpy>=1.26.0",
+    "silero-vad>=5.1",
+]
+
+# LLM provider SDKs. Both can stay installed; LLM_PROVIDER env picks one.
+llm = [
+    "groq==0.15.0",
+    "ollama>=0.4.0",
+]
+
+# OpenTelemetry (Phase G.2). Opt-in at runtime; tests install this group so
+# the tracing unit tests can exercise the span-emitting code paths.
+observability = [
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+]
+
+# Test + lint tooling. Not shipped in production images.
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+
+# Convenience: everything at once (matches CONTRIBUTING.md's local setup).
+all = [
+    "voice-assistant-backend[audio,llm,observability,dev]",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+# -----------------------------------------------------------------------------
+# Tooling config (moved from the previous minimal pyproject.toml — unchanged)
+# -----------------------------------------------------------------------------
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

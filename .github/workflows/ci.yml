@@ -21,10 +21,14 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install minimal deps (skip heavy models to keep CI fast)
+      - name: Install test deps
+        # Single source of truth is backend/pyproject.toml. The `dev` and
+        # `observability` extras pull in pytest/ruff and the OTel SDK that
+        # the tracing tests exercise. Heavy ML wheels (audio/llm extras)
+        # stay out of CI to keep it under 30s.
         run: |
           cd backend
-          pip install ruff pytest pytest-asyncio fastapi 'uvicorn[standard]' python-dotenv
+          pip install -e ".[dev,observability]"
 
       - name: Lint with ruff
         run: |

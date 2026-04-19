@@ -22,7 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+# Same layer-caching trick as the x86 Dockerfile: pyproject.toml + an empty
+# package skeleton so `-e .[extras]` resolves before the real source is copied.
+COPY pyproject.toml requirements.txt ./
+RUN mkdir -p app && touch app/__init__.py
 # Torch CPU wheels for arm64 (manylinux2014_aarch64). Comment out or override
 # if you hit wheel resolution issues — some upstreams occasionally lag.
 RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu \

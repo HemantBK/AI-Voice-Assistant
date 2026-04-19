@@ -19,8 +19,13 @@ cd <repo>
 # Backend
 cd backend
 python -m venv .venv && . .venv/Scripts/activate    # Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[all]"                              # everything: audio + llm + observability + dev
 cp .env.example .env
+
+# Lean alternative (e.g. for CI-style test runs, no heavy ML wheels):
+#   pip install -e ".[dev,observability]"
+# Docker-style runtime only (no dev tools):
+#   pip install -e ".[llm,audio,observability]"  (or: pip install -r requirements.txt)
 
 # Frontend
 cd ../frontend

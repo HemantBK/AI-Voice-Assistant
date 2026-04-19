@@ -6,11 +6,16 @@ tracing is on, and is a no-op on tracing when off.
 """
 from __future__ import annotations
 
-import importlib
 import sys
 from pathlib import Path
 
 import pytest
+
+# Tracing is an opt-in feature; skip this whole file when OTel isn't
+# installed so `pip install -r requirements.txt` being slimmed down doesn't
+# break the rest of the test suite.
+pytest.importorskip("opentelemetry")
+pytest.importorskip("opentelemetry.sdk.trace")
 
 # Ensure backend/ is on sys.path (tests run from repo root)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

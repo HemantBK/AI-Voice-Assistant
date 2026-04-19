@@ -109,8 +109,8 @@ Legend: ✅ runs + tested · ⚠️ builds cleanly but needs user-side validatio
 ### Option A — Docker (zero-dep, recommended)
 
 ```bash
-git clone https://github.com/<you>/voice-assistant.git
-cd voice-assistant
+git clone https://github.com/HemantBK/AI-Voice-Assistant.git
+cd AI-Voice-Assistant
 cp backend/.env.example backend/.env      # defaults to LLM_PROVIDER=ollama
 docker compose up
 ```
@@ -128,7 +128,7 @@ ollama pull qwen2.5:3b
 # Terminal 2 — backend
 cd backend
 python -m venv .venv && . .venv/Scripts/activate    # Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[llm,audio,observability]"          # or: pip install -r requirements.txt
 cp .env.example .env
 python run.py                                         # → http://localhost:8000
 
@@ -218,6 +218,19 @@ Everything is env-driven. Full reference in [backend/.env.example](backend/.env.
 | `ALLOWED_ORIGINS` | `*` | Comma-separated list in prod |
 | `RATE_LIMIT_PER_MINUTE` | `60` | `0` disables |
 | `LOG_FORMAT` | `text` | `json` for structured logs |
+
+### Install recipes
+
+Dependencies live in `backend/pyproject.toml` with named extras so each scenario has a one-line install:
+
+| Scenario | Command |
+|---|---|
+| Everything (local dev) | `pip install -e "backend[all]"` |
+| Runtime only (Docker-equivalent) | `pip install -e "backend[llm,audio,observability]"` or `pip install -r backend/requirements.txt` |
+| Tests only (CI) | `pip install -e "backend[dev,observability]"` |
+| Tracing off, no test tooling | `pip install -e "backend[llm,audio]"` |
+
+Extras defined: `audio` (Whisper + Kokoro + Silero), `llm` (Groq + Ollama SDKs), `observability` (OpenTelemetry), `dev` (pytest + ruff), `all` (union).
 
 ---
 

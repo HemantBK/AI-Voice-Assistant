@@ -33,7 +33,6 @@ def split_sentences(text: str, min_chars: int = 8) -> list[str]:
         return []
 
     parts: list[str] = []
-    buf: list[str] = []
     i = 0
     for match in _SENTENCE_END.finditer(text):
         end = match.end()

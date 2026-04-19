@@ -4,7 +4,27 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
-Placeholder for the next release. Contributors: add your entry here.
+### Changed — dependency packaging (root-cause fix for CI regressions)
+- `backend/pyproject.toml` is now the single source of truth for all Python
+  deps via named extras: `audio`, `llm`, `observability`, `dev`, and `all`.
+- `backend/requirements.txt` reduced to a one-liner pointer
+  (`-e .[llm,audio,observability]`) — kept only for Docker / `pip install -r`
+  familiarity.
+- `backend/Dockerfile` (+ `Dockerfile.arm64`) use the empty-package-skeleton
+  pattern so `pip install -r requirements.txt` resolves the `-e .[extras]`
+  pointer while preserving layer caching: dependency install stays cached
+  until `pyproject.toml` itself changes.
+- `.github/workflows/ci.yml` install step collapsed from a hand-curated
+  package list to `pip install -e ".[dev,observability]"`. New test deps no
+  longer require a second edit in CI to land.
+- `README.md` adds an "Install recipes" table under Configuration.
+- `CONTRIBUTING.md` local setup now documents `.[all]` / `.[dev,observability]`
+  alternatives.
+
+**Root cause this fixes:** previously CI hand-listed which packages to install.
+When a new test dep was added (Phase G.2's `opentelemetry-*`) the list wasn't
+updated and tests errored with `ModuleNotFoundError`. With extras as the single
+source of truth, CI and local setups install from the same declarations.
 
 ---
 
