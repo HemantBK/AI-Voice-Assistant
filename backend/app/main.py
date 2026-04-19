@@ -1,7 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import ALLOWED_ORIGINS, LOG_FORMAT, LOG_LEVEL
+from app.config import (
+    ALLOWED_ORIGINS,
+    LOG_FORMAT,
+    LOG_LEVEL,
+    OTEL_ENABLED,
+    OTEL_EXPORTER_OTLP_ENDPOINT,
+    OTEL_SAMPLE_RATE,
+    OTEL_SERVICE_NAME,
+)
+from app.core import tracing
 from app.core.auth import APIKeyMiddleware
 from app.core.logging import configure as configure_logging
 from app.core.rate_limit import RateLimitMiddleware
@@ -10,11 +19,23 @@ from app.routers import chat, pipeline, stt, tts
 
 configure_logging(LOG_FORMAT, LOG_LEVEL)
 
+# Configure OpenTelemetry before app creation so FastAPI auto-instrumentation
+# sees a tracer provider. Safe no-op when OTEL_ENABLED=false.
+if OTEL_ENABLED:
+    tracing.configure(
+        service_name=OTEL_SERVICE_NAME,
+        endpoint=OTEL_EXPORTER_OTLP_ENDPOINT,
+        sample_rate=OTEL_SAMPLE_RATE,
+    )
+
 app = FastAPI(
     title="AI Voice Assistant API",
     description="Local-first voice assistant — STT + LLM + TTS, streaming over WebSocket.",
     version="1.0.0",
 )
+
+if OTEL_ENABLED:
+    tracing.instrument_fastapi(app)
 
 app.add_middleware(
     CORSMiddleware,

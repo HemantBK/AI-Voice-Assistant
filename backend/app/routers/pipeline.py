@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket, WebSo
 from fastapi.responses import JSONResponse
 
 from app.core.timing import stage
+from app.core.tracing import get_tracer
 from app.services import llm_service, stt_service, tts_service
 from app.streaming.async_stream import async_iter_sync
 from app.streaming.sentence_splitter import IncrementalSentenceSplitter
@@ -52,84 +53,136 @@ async def voice_pipeline(audio: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class _NullSpanCtx:
+    def __enter__(self):
+        return None
+    def __exit__(self, *exc):
+        return False
+
+
 async def _run_turn(
     websocket: WebSocket,
     audio_bytes: bytes,
     streaming: bool,
     history: list[dict],
 ) -> None:
-    """Run a single STT->LLM->TTS turn. Appends to `history` in place."""
-    with stage("stt"):
-        stt_result = stt_service.transcribe(audio_bytes)
-    transcript = stt_result["text"]
-    await websocket.send_json({"type": "transcript", "text": transcript})
+    """Run a single STT->LLM->TTS turn. Appends to `history` in place.
 
-    if not transcript:
-        return
+    The whole body lives under a `voice.turn` OTel span (when tracing is
+    on) with attributes recorded as each stage completes. `stage()` emits
+    per-phase child spans + the X-Stage-*-Ms response headers the eval
+    harness consumes.
+    """
+    tracer = get_tracer()
+    turn_cm = tracer.start_as_current_span("voice.turn") if tracer is not None else _NullSpanCtx()
 
-    history.append({"role": "user", "content": transcript})
-    history_snapshot = list(history)
+    with turn_cm as turn_span:
+        if turn_span is not None:
+            turn_span.set_attribute("voice.streaming", streaming)
+            turn_span.set_attribute("voice.audio_bytes", len(audio_bytes))
 
-    if not streaming:
-        with stage("llm"):
-            ai_response = llm_service.chat(transcript, history_snapshot)
-        history.append({"role": "assistant", "content": ai_response})
+        with stage("stt") as stt_span:
+            stt_result = stt_service.transcribe(audio_bytes)
+        if stt_span is not None:
+            stt_span.set_attribute("stt.language", stt_result.get("language", "") or "")
+            stt_span.set_attribute("stt.audio_duration_s", float(stt_result.get("audio_duration_s") or 0.0))
+            stt_span.set_attribute("stt.speech_duration_s", float(stt_result.get("speech_duration_s") or 0.0))
+            stt_span.set_attribute("stt.vad_trimmed_ms", float(stt_result.get("vad_trimmed_ms") or 0.0))
+
+        transcript = stt_result["text"]
+        await websocket.send_json({"type": "transcript", "text": transcript})
+        if turn_span is not None:
+            turn_span.set_attribute("voice.transcript_chars", len(transcript))
+
+        if not transcript:
+            if turn_span is not None:
+                turn_span.set_attribute("voice.empty_transcript", True)
+            return
+
+        history.append({"role": "user", "content": transcript})
+        history_snapshot = list(history)
+
+        if not streaming:
+            with stage("llm") as llm_span:
+                ai_response = llm_service.chat(transcript, history_snapshot)
+            if llm_span is not None:
+                llm_span.set_attribute("llm.streaming", False)
+                llm_span.set_attribute("llm.response_chars", len(ai_response))
+            history.append({"role": "assistant", "content": ai_response})
+            if len(history) > 20:
+                del history[:-20]
+            await websocket.send_json({"type": "response", "text": ai_response})
+            with stage("tts") as tts_span:
+                tts_audio = tts_service.synthesize(ai_response)
+            if tts_span is not None:
+                tts_span.set_attribute("tts.audio_bytes", len(tts_audio))
+                tts_span.set_attribute("tts.streaming", False)
+            await websocket.send_json({
+                "type": "audio",
+                "data": base64.b64encode(tts_audio).decode("utf-8"),
+            })
+            if turn_span is not None:
+                turn_span.set_attribute("voice.response_chars", len(ai_response))
+            return
+
+        splitter = IncrementalSentenceSplitter()
+        accumulated: list[str] = []
+        seq = 0
+        pending_sentences: list[str] = []
+
+        async def emit_sentence(text: str, is_final: bool) -> None:
+            nonlocal seq
+            with stage("tts") as tts_span:
+                chunk = await asyncio.to_thread(tts_service.synthesize, text)
+            if tts_span is not None:
+                tts_span.set_attribute("tts.audio_bytes", len(chunk))
+                tts_span.set_attribute("tts.sentence_chars", len(text))
+                tts_span.set_attribute("tts.seq", seq)
+            await websocket.send_json({
+                "type": "tts_chunk",
+                "seq": seq,
+                "text": text,
+                "audio": base64.b64encode(chunk).decode("utf-8"),
+                "is_final": is_final,
+            })
+            seq += 1
+
+        def token_gen():
+            return llm_service.chat_stream(transcript, history_snapshot)
+
+        with stage("llm_stream") as llm_span:
+            if llm_span is not None:
+                llm_span.set_attribute("llm.streaming", True)
+            async for token in async_iter_sync(token_gen):
+                accumulated.append(token)
+                await websocket.send_json({"type": "llm_delta", "delta": token})
+                for sentence in splitter.push(token):
+                    pending_sentences.append(sentence)
+                while pending_sentences:
+                    await emit_sentence(pending_sentences.pop(0), is_final=False)
+            if llm_span is not None:
+                llm_span.set_attribute("llm.tokens", len(accumulated))
+
+        tail = list(splitter.flush())
+        pending_sentences.extend(tail)
+        for i, sentence in enumerate(pending_sentences):
+            is_final = i == len(pending_sentences) - 1
+            await emit_sentence(sentence, is_final=is_final)
+
+        if seq == 0:
+            fallback = "".join(accumulated).strip() or "I'm not sure how to answer that."
+            await emit_sentence(fallback, is_final=True)
+
+        full_text = "".join(accumulated).strip()
+        history.append({"role": "assistant", "content": full_text})
         if len(history) > 20:
             del history[:-20]
-        await websocket.send_json({"type": "response", "text": ai_response})
-        with stage("tts"):
-            tts_audio = tts_service.synthesize(ai_response)
-        await websocket.send_json({
-            "type": "audio",
-            "data": base64.b64encode(tts_audio).decode("utf-8"),
-        })
-        return
 
-    splitter = IncrementalSentenceSplitter()
-    accumulated: list[str] = []
-    seq = 0
-    pending_sentences: list[str] = []
-
-    async def emit_sentence(text: str, is_final: bool) -> None:
-        nonlocal seq
-        chunk = await asyncio.to_thread(tts_service.synthesize, text)
-        await websocket.send_json({
-            "type": "tts_chunk",
-            "seq": seq,
-            "text": text,
-            "audio": base64.b64encode(chunk).decode("utf-8"),
-            "is_final": is_final,
-        })
-        seq += 1
-
-    def token_gen():
-        return llm_service.chat_stream(transcript, history_snapshot)
-
-    async for token in async_iter_sync(token_gen):
-        accumulated.append(token)
-        await websocket.send_json({"type": "llm_delta", "delta": token})
-        for sentence in splitter.push(token):
-            pending_sentences.append(sentence)
-        while pending_sentences:
-            await emit_sentence(pending_sentences.pop(0), is_final=False)
-
-    tail = list(splitter.flush())
-    pending_sentences.extend(tail)
-    for i, sentence in enumerate(pending_sentences):
-        is_final = i == len(pending_sentences) - 1
-        await emit_sentence(sentence, is_final=is_final)
-
-    if seq == 0:
-        fallback = "".join(accumulated).strip() or "I'm not sure how to answer that."
-        await emit_sentence(fallback, is_final=True)
-
-    full_text = "".join(accumulated).strip()
-    history.append({"role": "assistant", "content": full_text})
-    if len(history) > 20:
-        del history[:-20]
-
-    await websocket.send_json({"type": "response", "text": full_text})
-    await websocket.send_json({"type": "tts_end", "count": seq})
+        await websocket.send_json({"type": "response", "text": full_text})
+        await websocket.send_json({"type": "tts_end", "count": seq})
+        if turn_span is not None:
+            turn_span.set_attribute("voice.response_chars", len(full_text))
+            turn_span.set_attribute("voice.tts_chunks", seq)
 
 
 @router.websocket("/ws/voice")

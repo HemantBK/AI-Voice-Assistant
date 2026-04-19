@@ -1,0 +1,18 @@
+# Training deps — kept separate from backend/requirements.txt because they're
+# only needed on the training host (Colab / Kaggle / your local GPU).
+#
+# Tested with T4 16GB (Colab free) and P100 16GB (Kaggle free). For Qwen2.5-3B
+# with 4-bit quantization + LoRA adapter + batch size 1, peak VRAM is ~6 GB.
+#
+# Pinned looser than the backend on purpose — these move fast and the
+# community usually ships patches weekly.
+
+torch>=2.3
+transformers>=4.44
+accelerate>=0.34
+peft>=0.12
+trl>=0.10
+datasets>=2.20
+bitsandbytes>=0.43       # 4-bit quant; CUDA-only. Colab/Kaggle GPUs: fine. CPU: skip and use fp16.
+sentencepiece>=0.2
+huggingface_hub>=0.24    # for pushing the merged model

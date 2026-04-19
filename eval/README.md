@@ -5,12 +5,14 @@ we can prove improvement instead of claiming it.
 
 What it measures today:
 
-| Kind    | Metric                          | How                                             |
-|---------|---------------------------------|-------------------------------------------------|
-| LLM     | keyword-hit accuracy, latency   | golden Q&A (`datasets/llm/golden_qa.jsonl`)     |
-| STT     | WER per sample, latency         | manifest of audio fixtures + reference text     |
-| TTS     | latency, real-time factor (RTF) | synth each prompt, measure time / audio length  |
-| E2E     | wall + per-stage latency        | POST `/api/pipeline`, read `X-Stage-*-Ms`       |
+| Kind    | Metric                                       | How                                             |
+|---------|----------------------------------------------|-------------------------------------------------|
+| LLM     | keyword-hit accuracy, latency                | golden Q&A (`datasets/llm/golden_qa.jsonl`)     |
+| LLM     | judge scores (correctness / relevance / conciseness) + 2-judge agreement | `--judge ollama` / `--judge groq` (see below)   |
+| STT     | WER per sample, latency                      | manifest of audio fixtures + reference text     |
+| TTS     | latency, real-time factor (RTF)              | synth each prompt, measure time / audio length  |
+| E2E     | wall + per-stage latency                     | POST `/api/pipeline`, read `X-Stage-*-Ms`       |
+| E2E     | first_llm_delta_ms / first_audio_byte_ms     | WS streaming runner                             |
 
 All outputs land in `eval/results/` as timestamped JSON plus a `*-latest.json`.
 Gitignored.
@@ -43,6 +45,15 @@ python -m eval.runners.eval_llm --save
 python -m eval.runners.eval_tts --emit-stt-fixtures --save   # seeds STT fixtures
 python -m eval.runners.eval_stt --save
 
+# LLM-as-judge (local, free — uses qwen2.5:7b via Ollama)
+python -m eval.runners.eval_llm --judge ollama --save
+
+# Two-judge cross-check (reports inter-rater agreement)
+python -m eval.runners.eval_llm \
+    --judge  ollama:qwen2.5:7b \
+    --judge2 groq:llama-3.3-70b-versatile \
+    --save
+
 # E2E latency (requires server running: `cd backend && python run.py`)
 python -m eval.runners.eval_latency \
     --fixture eval/datasets/stt/tts-roundtrip-00.wav \
@@ -69,6 +80,10 @@ The repo ships with **no audio files**. Two options:
 
 - **LLM accuracy** — `hits / scorable`. `scorable` excludes conversational
   prompts with empty `must_contain`, so chit-chat doesn't skew the score.
+- **Judge mean** — average of the judge's correctness/relevance/conciseness
+  scores across all items. Each dimension is 1–5 per [`rubric.md`](datasets/llm/rubric.md).
+- **within-1 agreement** — fraction of items where two judges scored
+  within 1 point on every dimension. Below ~80% the metric is noise.
 - **WER** — 0.0 is perfect; 1.0 is "all words wrong". Lower is better.
 - **RTF** — `synth_time / audio_time`. <1.0 means faster than real-time.
 - **Stage latency** — parsed from `X-Stage-stt-Ms`, `X-Stage-llm-Ms`,

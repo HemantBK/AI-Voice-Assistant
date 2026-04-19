@@ -1,9 +1,17 @@
 """Per-stage timing for the voice pipeline.
 
-`StageTimer` is a lightweight context manager that records named stage
-durations on the current request. Stages are exposed as response headers
-(`X-Stage-*-Ms`) and logged as a structured JSON line so the eval harness
-can parse latency without running a separate profiler.
+`stage()` is a lightweight context manager that records named stage
+durations. It has two behaviors running in parallel:
+
+  1. HTTP response headers: `X-Stage-<name>-Ms` + `X-Total-Ms`. These
+     are what the eval harness reads. Always on.
+  2. OpenTelemetry spans: when tracing is configured (Phase G.2), the
+     same stage boundaries become child spans with their durations.
+     The context manager `yield`s the span object (or None) so callers
+     can attach attributes like `llm.model` or `stt.audio_duration_s`.
+
+Backwards compatibility: `with stage("x"):` keeps working; the yielded
+value is new but optional.
 """
 from __future__ import annotations
 
@@ -12,11 +20,13 @@ import json
 import logging
 import time
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Any, Iterator
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+
+from app.core.tracing import get_tracer
 
 
 logger = logging.getLogger("timing")
@@ -27,15 +37,43 @@ _current: contextvars.ContextVar[dict[str, float] | None] = contextvars.ContextV
 
 
 @contextmanager
-def stage(name: str) -> Iterator[None]:
+def stage(name: str) -> Iterator[Any]:
+    """Time a named stage.
+
+    Yields the OTel span (if tracing is on) or None. Either way the stage's
+    elapsed ms lands on the current request's header bucket.
+
+    Usage:
+        with stage("stt") as span:
+            result = stt_service.transcribe(audio)
+            if span is not None:
+                span.set_attribute("stt.audio_duration_s", result["audio_duration_s"])
+    """
     bucket = _current.get()
     t0 = time.perf_counter()
-    try:
-        yield
-    finally:
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        if bucket is not None:
-            bucket[name] = round(bucket.get(name, 0.0) + elapsed_ms, 2)
+    tracer = get_tracer()
+    if tracer is not None:
+        # start_as_current_span is a CM; use it explicitly so we can also
+        # bookkeep header timings in the finally block.
+        span_cm = tracer.start_as_current_span(f"pipeline.{name}")
+        span = span_cm.__enter__()
+        try:
+            yield span
+            span_cm.__exit__(None, None, None)
+        except BaseException as e:
+            span_cm.__exit__(type(e), e, e.__traceback__)
+            raise
+        finally:
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            if bucket is not None:
+                bucket[name] = round(bucket.get(name, 0.0) + elapsed_ms, 2)
+    else:
+        try:
+            yield None
+        finally:
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            if bucket is not None:
+                bucket[name] = round(bucket.get(name, 0.0) + elapsed_ms, 2)
 
 
 class TimingMiddleware(BaseHTTPMiddleware):

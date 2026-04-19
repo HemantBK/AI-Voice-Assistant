@@ -62,3 +62,16 @@ RATE_LIMIT_CAPACITY = int(os.getenv("RATE_LIMIT_CAPACITY", "20"))
 # Logging
 LOG_FORMAT = os.getenv("LOG_FORMAT", "text").lower()  # "text" | "json"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# -----------------------------------------------------------------------------
+# OpenTelemetry (Phase G.2). Off by default so the backend stays lean.
+# Turn it on by setting OTEL_ENABLED=true; point at any OTLP/HTTP collector
+# (Jaeger, Tempo, Grafana Cloud, Honeycomb, Datadog, ...). The included
+# docker-compose.observability.yml overlay runs Jaeger locally.
+# -----------------------------------------------------------------------------
+OTEL_ENABLED = os.getenv("OTEL_ENABLED", "false").lower() in ("1", "true", "yes")
+OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "voice-assistant-backend")
+OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv(
+    "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"
+)
+OTEL_SAMPLE_RATE = float(os.getenv("OTEL_SAMPLE_RATE", "1.0"))

@@ -1,0 +1,25 @@
+{"messages": [{"role": "user", "content": "What's the weather like?"}, {"role": "assistant", "content": "I can't check live weather. Want me to open the weather app?"}]}
+{"messages": [{"role": "user", "content": "Set a timer for 5 minutes."}, {"role": "assistant", "content": "Sure — 5 minute timer started."}]}
+{"messages": [{"role": "user", "content": "How do I boil an egg?"}, {"role": "assistant", "content": "Bring water to a rolling boil. Add the egg, cook 6 minutes for soft, 9 for hard. Ice bath when done."}]}
+{"messages": [{"role": "user", "content": "What's the capital of France?"}, {"role": "assistant", "content": "Paris."}]}
+{"messages": [{"role": "user", "content": "Remind me to call mom tomorrow."}, {"role": "assistant", "content": "Got it — reminder set for tomorrow to call your mom."}]}
+{"messages": [{"role": "user", "content": "What time is it?"}, {"role": "assistant", "content": "I don't have a clock handy. Your device's clock will know."}]}
+{"messages": [{"role": "user", "content": "Tell me a joke."}, {"role": "assistant", "content": "Why don't skeletons fight? They don't have the guts."}]}
+{"messages": [{"role": "user", "content": "How's traffic to work?"}, {"role": "assistant", "content": "I can't pull live traffic. Try your maps app for a live ETA."}]}
+{"messages": [{"role": "user", "content": "Play some focus music."}, {"role": "assistant", "content": "I can't start playback directly, but any lo-fi or ambient station works well for focus."}]}
+{"messages": [{"role": "user", "content": "Convert 100 dollars to euros."}, {"role": "assistant", "content": "I don't have live rates. Roughly 90 to 95 euros at recent exchange rates."}]}
+{"messages": [{"role": "user", "content": "What's 47 times 12?"}, {"role": "assistant", "content": "564."}]}
+{"messages": [{"role": "user", "content": "Explain recursion in one sentence."}, {"role": "assistant", "content": "A function that solves a problem by calling itself on a smaller version of the same problem."}]}
+{"messages": [{"role": "user", "content": "Is pizza healthy?"}, {"role": "assistant", "content": "It depends on the toppings and portion. In moderation, a reasonable treat."}]}
+{"messages": [{"role": "user", "content": "How far is the moon?"}, {"role": "assistant", "content": "About 384,000 kilometers, or 239,000 miles."}]}
+{"messages": [{"role": "user", "content": "What's the shortcut to copy on Mac?"}, {"role": "assistant", "content": "Command plus C."}]}
+{"messages": [{"role": "user", "content": "I'm feeling stressed."}, {"role": "assistant", "content": "That's tough. A short walk or three slow breaths can help reset. Want a breathing exercise?"}]}
+{"messages": [{"role": "user", "content": "What's a Dockerfile?"}, {"role": "assistant", "content": "A text file that tells Docker how to build a container image: base OS, dependencies, and how to run your app."}]}
+{"messages": [{"role": "user", "content": "Who wrote Hamlet?"}, {"role": "assistant", "content": "William Shakespeare."}]}
+{"messages": [{"role": "user", "content": "How do I stay focused while studying?"}, {"role": "assistant", "content": "Block notifications, pick one task, use a 25 minute timer, then take a 5 minute break."}]}
+{"messages": [{"role": "user", "content": "Recommend a quick dinner idea."}, {"role": "assistant", "content": "Pasta with garlic, olive oil, and whatever greens you have. Fifteen minutes, minimal cleanup."}]}
+{"messages": [{"role": "user", "content": "What does HTTPS mean?"}, {"role": "assistant", "content": "HTTP over TLS. The connection to the server is encrypted so nobody in between can read or tamper with it."}]}
+{"messages": [{"role": "user", "content": "Translate hello to Japanese."}, {"role": "assistant", "content": "Konnichiwa."}]}
+{"messages": [{"role": "user", "content": "Give me a morning routine."}, {"role": "assistant", "content": "Water first, then light movement for ten minutes, then three priorities written down before you open email."}]}
+{"messages": [{"role": "user", "content": "What's the difference between HTTP and HTTPS?"}, {"role": "assistant", "content": "HTTPS encrypts the traffic between you and the server; HTTP doesn't. Everything else is the same protocol."}]}
+{"messages": [{"role": "user", "content": "Tell me something interesting."}, {"role": "assistant", "content": "Octopuses have three hearts and blue blood. Two hearts pump blood to the gills, one to the rest of the body."}]}

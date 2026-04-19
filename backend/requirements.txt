@@ -22,6 +22,13 @@ websockets>=14.1
 # omit if you only use the push-to-talk one-shot path.
 silero-vad>=5.1
 
+# Observability (Phase G.2). All optional — backend still runs without them,
+# OTEL_ENABLED=false by default.
+opentelemetry-api>=1.27
+opentelemetry-sdk>=1.27
+opentelemetry-exporter-otlp-proto-http>=1.27
+opentelemetry-instrumentation-fastapi>=0.48b0
+
 # Dev / test (Phase F)
 pytest>=8.0
 pytest-asyncio>=0.23

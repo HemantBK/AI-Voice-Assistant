@@ -24,6 +24,8 @@
 - [Architecture at a glance](#architecture-at-a-glance)
 - [Configuration](#configuration)
 - [Benchmarks & eval harness](#benchmarks--eval-harness)
+- [Observability](#observability)
+- [Fine-tuning](#fine-tuning)
 - [Project layout](#project-layout)
 - [API surface](#api-surface)
 - [Roadmap](#roadmap)
@@ -94,6 +96,9 @@ Design principles:
 | D' | OpenVoice v2 cloning scaffold | ⚠️ scaffold, needs validation + checkpoints | [notes](docs/design/phase-d-notes.md) |
 | E | ARM64 edge build | ⚠️ scaffold, needs hardware | [notes](docs/design/phase-e-notes.md) |
 | F | Hardening essentials | ✅ auth, rate limit, CORS, JSON logs, CI | [notes](docs/design/phase-f-notes.md) |
+| G.1 | LLM-as-judge eval | ✅ shipped | [notes](docs/design/phase-g1-llm-judge.md) |
+| G.2 | OpenTelemetry + Jaeger | ✅ shipped | [notes](docs/design/phase-g2-observability.md) |
+| G.3 | LoRA fine-tune Qwen2.5 | ✅ code + notebook; runs on Colab T4 | [notes](docs/design/phase-g3-lora-finetune.md) |
 
 Legend: ✅ runs + tested · ⚠️ builds cleanly but needs user-side validation.
 
@@ -242,10 +247,29 @@ Metrics reported:
 | `mean_wer` | Whisper accuracy on your STT manifest |
 | `mean_rtf` | TTS synth-time / audio-time |
 | `vad_trimmed_ms` | silence removed by Silero VAD |
+| `judge mean (C/R/Cn)` | LLM-as-judge score on correctness / relevance / conciseness (1–5) |
+| `within_1 agreement` | two-judge inter-rater agreement (cross-check for bias) |
 
 Results land in `eval/results/*.json` — gitignored, machine-specific. Diff across runs to prove deltas.
 
-Design rationale: [ADR 0001](docs/adr/0001-eval-harness.md).
+### LLM-as-judge
+
+Keyword-hit scoring ("does the word 'Paris' appear in the answer?") is cheap but shallow. For a credible quality signal we score each reply with a *stronger* LLM against a published [rubric](eval/datasets/llm/rubric.md): correctness, relevance, conciseness (each 1–5). An optional second judge runs in parallel so we can report inter-rater agreement — if two independent models don't agree, the metric itself is noise.
+
+```bash
+# Local, free, no API key — uses qwen2.5:7b via Ollama
+python -m eval.runners.eval_llm --judge ollama --save
+
+# Cross-check with a Groq-hosted judge from a different model family
+python -m eval.runners.eval_llm \
+  --judge  ollama:qwen2.5:7b \
+  --judge2 groq:llama-3.3-70b-versatile \
+  --save
+```
+
+Judge failures (bad JSON, timeout) are recorded per-item and don't fail the run. Rubric + known biases: [eval/datasets/llm/rubric.md](eval/datasets/llm/rubric.md). Design: [docs/design/phase-g1-llm-judge.md](docs/design/phase-g1-llm-judge.md).
+
+Design rationale for the harness itself: [ADR 0001](docs/adr/0001-eval-harness.md).
 
 ---
 
@@ -347,6 +371,43 @@ Next up (priority order):
 3. Real-speech fixtures for STT eval (currently TTS-roundtrip only).
 4. Replace in-memory rate limiter with Redis when a second replica is needed.
 5. OpenTelemetry migration for the timing middleware (ADR 0001 follow-up).
+
+---
+
+## Observability
+
+Opt-in OpenTelemetry tracing (Phase G.2). Every voice turn becomes a waterfall of `pipeline.stt` → `pipeline.llm_stream` → `pipeline.tts` spans with attributes (language, audio bytes, token count, VAD trim). Exports over OTLP/HTTP, so any compliant backend works — Jaeger, Tempo, Grafana Cloud, Honeycomb, Datadog.
+
+Zero-account local stack:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up
+# → Jaeger UI at http://localhost:16686
+# → pick service "voice-assistant-backend"
+```
+
+Flip `OTEL_ENABLED=false` (the default) to disable. The `X-Stage-*-Ms` response headers the eval runner depends on stay on regardless. Design + setup: [docs/design/phase-g2-observability.md](docs/design/phase-g2-observability.md).
+
+---
+
+## Fine-tuning
+
+LoRA fine-tune Qwen2.5-3B-Instruct on your own chat data and serve the result through the existing Ollama provider with zero backend changes (Phase G.3). Paint-by-numbers Colab notebook + reproducible CLI scripts + Ollama Modelfile + A/B eval runner.
+
+```bash
+# 1. Train on Colab (free T4) using finetune/train.ipynb
+# 2. Back on your machine, register the merged model:
+cd finetune/out && ollama create voice-assistant-ft -f Modelfile
+
+# 3. Flip backend/.env to use it:
+#    OLLAMA_MODEL=voice-assistant-ft
+
+# 4. Prove the fine-tune helped (or didn't) with judge scores:
+python -m eval.runners.eval_llm_compare \
+    --base qwen2.5:3b --finetuned voice-assistant-ft --judge ollama --save
+```
+
+Full guide with dataset curation tips + honest caveats: [finetune/README.md](finetune/README.md). Design rationale: [docs/design/phase-g3-lora-finetune.md](docs/design/phase-g3-lora-finetune.md).
 
 ---
 

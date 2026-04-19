@@ -8,6 +8,60 @@ Placeholder for the next release. Contributors: add your entry here.
 
 ---
 
+## Phase G.3 — LoRA fine-tune Qwen2.5
+
+See [phase-g3-lora-finetune](docs/design/phase-g3-lora-finetune.md).
+
+**Added**
+- `finetune/prepare_dataset.py` — validate + split chat-format JSONL.
+- `finetune/train.py` — LoRA fine-tune via HF `transformers` + `peft` + `trl`. 4-bit quant on CUDA, fp32 fallback on CPU. Writes adapter + metrics + qualitative samples.
+- `finetune/merge_export.py` — merge adapter, convert to GGUF via llama.cpp, emit Ollama `Modelfile`.
+- `finetune/Modelfile.template` — Qwen chat template + default system prompt.
+- `finetune/train.ipynb` — Colab/Kaggle paint-by-numbers notebook (8 cells).
+- `finetune/dataset_example.jsonl` — 25-row seed dataset in "concise voice assistant" style.
+- `finetune/requirements.txt` — training-only deps isolated from backend.
+- `eval/runners/eval_llm_compare.py` — side-by-side A/B runner for base vs fine-tuned Ollama models; reports per-dimension judge deltas.
+- `backend/tests/test_finetune_prepare.py` — 14 unit tests covering validation, split determinism, example-dataset sanity.
+
+**Changed**
+- README adds Fine-tuning section + status-table rows for G.1/G.2/G.3.
+
+---
+
+## Phase G.2 — OpenTelemetry + Jaeger
+
+See [phase-g2-observability](docs/design/phase-g2-observability.md).
+
+**Added**
+- `backend/app/core/tracing.py` — opt-in OTel setup with lazy imports.
+- Per-turn `voice.turn` span + per-stage `pipeline.stt` / `pipeline.llm_stream` / `pipeline.tts` children with attributes (language, VAD trim, streaming flag, audio bytes, sentence seq, token count).
+- `docker-compose.observability.yml` — Jaeger all-in-one overlay with backend env overrides.
+- `backend/tests/test_tracing.py` — 6 tests using `InMemorySpanExporter`.
+- OTel config knobs: `OTEL_ENABLED`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SAMPLE_RATE`.
+
+**Changed**
+- `stage()` context manager now yields the active OTel span (or None). Header bucket behavior unchanged — eval harness contract preserved.
+- `main.py` calls `tracing.configure()` + installs `FastAPIInstrumentor` when enabled.
+- README adds Observability section + TOC entry.
+
+---
+
+## Phase G.1 — LLM-as-judge evaluation
+
+See [phase-g1-llm-judge](docs/design/phase-g1-llm-judge.md).
+
+**Added**
+- `eval/lib/judge.py` — `Judge`, `JudgeScore`, balance-aware `extract_json`, `pair_agreement`, `make_judge(spec)`; Ollama + Groq factories reuse project providers.
+- `eval/datasets/llm/rubric.md` — published rubric (correctness / relevance / conciseness, 1–5) with bias discussion.
+- `eval/runners/eval_llm.py` — new `--judge` / `--judge2` flags, per-item scores, aggregated summaries, agreement report.
+- `backend/tests/test_judge.py` — 18 unit tests (JSON extraction, score validation, agreement).
+
+**Changed**
+- README Benchmarks section documents judge metrics + runnable A/B command.
+- `eval/README.md` adds usage + how to read judge outputs.
+
+---
+
 ## Phase F — Hardening essentials
 
 See [phase-f-notes](docs/design/phase-f-notes.md).

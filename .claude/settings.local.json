@@ -14,7 +14,8 @@
       "Bash(python -)",
       "Bash(npx --yes -p @mermaid-js/mermaid-cli@11 mmdc --version)",
       "Bash(npx --yes -p @mermaid-js/mermaid-cli@11 mmdc -i ARCHITECTURE-4.mmd -o ARCHITECTURE-4.svg -q)",
-      "Bash(grep -vE \"^\\(npm warn|npm notice|$\\)\")"
+      "Bash(grep -vE \"^\\(npm warn|npm notice|$\\)\")",
+      "Bash(pip install *)"
     ]
   }
 }
