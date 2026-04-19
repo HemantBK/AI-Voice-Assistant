@@ -1,36 +1,114 @@
+# =============================================================================
 # Python
+# =============================================================================
 __pycache__/
 *.py[cod]
+*$py.class
+*.egg
 *.egg-info/
+.eggs/
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+.hypothesis/
+dist/
+build/
+pip-wheel-metadata/
+
+# Virtual envs
 .venv/
 venv/
 env/
+ENV/
 
-# Node
+# =============================================================================
+# Node / JavaScript
+# =============================================================================
 node_modules/
 dist/
+.npm
+.yarn/
+.pnp.*
+*.tsbuildinfo
+.vite/
+.eslintcache
 
-# Environment
+# =============================================================================
+# Secrets / environment
+# =============================================================================
 .env
+.env.*
+!.env.example
 *.env.local
+*.pem
+*.key
+secrets/
 
-# IDE
+# =============================================================================
+# IDEs / editors
+# =============================================================================
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.vs/
 
-# OS
+# =============================================================================
+# OS cruft
+# =============================================================================
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Models (downloaded at runtime)
+# =============================================================================
+# Model weights + runtime downloads
+# Keep the repo lightweight. Models are pulled on first run or via
+# `ollama pull` / `python -m piper.download_voices`.
+# =============================================================================
 *.bin
 *.pt
+*.pth
 *.onnx
+*.gguf
+*.safetensors
+*.ckpt
+models/
+checkpoints/
+openvoice-ckpts/
+piper-voices/
 
-# Eval artifacts
+# =============================================================================
+# Eval harness artifacts (ADR 0001)
+# Results are per-run and machine-specific. Commit the harness, not the data.
+# =============================================================================
 eval/results/*.json
 eval/datasets/stt/*.wav
 eval/datasets/stt/*.mp3
 eval/datasets/stt/*.webm
+eval/datasets/stt/*.ogg
+eval/datasets/stt/*.flac
+eval/datasets/tts/out/
+
+# =============================================================================
+# Logs + local artifacts
+# =============================================================================
+*.log
+logs/
+*.pid
+.tmp/
+tmp/
+
+# =============================================================================
+# Docker
+# =============================================================================
+.docker/
+docker-compose.override.yml

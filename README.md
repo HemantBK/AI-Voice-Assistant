@@ -1,872 +1,401 @@
-# AI Voice Assistant
+# Voice Assistant — Local-first, Streaming, Open-source
 
-A full-stack, real-time voice assistant built entirely with **free and open-source tools** — no credit card, no API costs, no trial expiry.
+> A production-leaning voice assistant that runs **100% on your machine** by default. Speak, get a natural-sounding reply spoken back, with sub-second first-audio-byte latency targeting on a mid-range laptop.
 
-Speak naturally, get intelligent responses spoken back to you. Powered by Faster-Whisper (STT) + a swappable LLM backend (Ollama/Qwen2.5 by default for fully-local mode, Groq/Llama 3.3 70B optional) + Kokoro (TTS).
+<p align="left">
+  <a href="#status"><img alt="status" src="https://img.shields.io/badge/status-active-brightgreen"></a>
+  <a href="#license"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-blue">
+  <img alt="node" src="https://img.shields.io/badge/node-20%2B-brightgreen">
+  <img alt="local-first" src="https://img.shields.io/badge/local--first-yes-success">
+  <img alt="api-key" src="https://img.shields.io/badge/api--key-not%20required-success">
+</p>
 
-> **Local-first by default.** Set `LLM_PROVIDER=ollama` (the default in `.env.example`) and the entire pipeline — STT, LLM, TTS — runs on your machine. No API keys, no network calls, no data leaves the box. See [docs/adr/0002-llm-provider-abstraction.md](docs/adr/0002-llm-provider-abstraction.md) for the design.
-
-```
- You speak         AI listens         AI thinks          AI speaks
- ┌────────┐       ┌───────────┐      ┌───────────┐      ┌──────────┐
- │  🎙️    │  ──▶  │  Faster   │ ──▶  │   Groq    │ ──▶  │  Kokoro  │
- │  User   │       │  Whisper  │      │ Llama 3.3 │      │   TTS    │
- │  Audio  │       │   (STT)   │      │   (LLM)   │      │  (Voice) │
- └────────┘       └───────────┘      └───────────┘      └──────────┘
-```
+**Pipeline:** `🎙️ Mic → Faster-Whisper (STT) → Ollama / Groq (LLM) → Kokoro / Piper (TTS) → 🔊 Speakers` — streamed over a single WebSocket.
 
 ---
 
 ## Table of Contents
 
-- [Features](#features)
-- [System Architecture](#system-architecture)
-- [Tech Stack](#tech-stack)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Backend Deep Dive](#backend-deep-dive)
-- [Frontend Deep Dive](#frontend-deep-dive)
-- [API Reference](#api-reference)
-- [WebSocket Protocol](#websocket-protocol)
+- [Why this exists](#why-this-exists)
+- [Pros and cons (read before adopting)](#pros-and-cons-read-before-adopting)
+- [Status](#status)
+- [Quickstart](#quickstart)
+- [Architecture at a glance](#architecture-at-a-glance)
 - [Configuration](#configuration)
-- [Docker Deployment](#docker-deployment)
-- [Free Cloud Deployment](#free-cloud-deployment)
-- [CI/CD Pipeline](#cicd-pipeline)
-- [Troubleshooting](#troubleshooting)
+- [Benchmarks & eval harness](#benchmarks--eval-harness)
+- [Project layout](#project-layout)
+- [API surface](#api-surface)
+- [Roadmap](#roadmap)
+- [Documentation](#documentation)
+- [Security](#security)
 - [Contributing](#contributing)
 - [License](#license)
 
 ---
 
-## Features
+## Why this exists
 
-- **Real-time voice conversation** — talk naturally, hear AI responses spoken aloud
-- **100% offline mode** — Ollama + Qwen2.5 (Apache-2.0) by default; no API key, nothing phones home
-- **Pluggable LLM** — swap between local (Ollama) and cloud (Groq) with one env var
-- **Speech-to-Text** — Faster-Whisper with 99+ language support, 7.75% WER
-- **LLM-powered responses** — Qwen2.5 3B locally, or Groq Llama 3.3 70B at ~80ms TTFT
-- **Natural text-to-speech** — Kokoro TTS, 82M params, <0.3s latency
-- **WebSocket streaming** — real-time bidirectional communication
-- **Conversation memory** — maintains context across turns (last 20 messages)
-- **Dark-themed UI** — clean, modern React interface with status animations
-- **Fully containerized** — Docker + Docker Compose for one-command deployment
-- **CI/CD ready** — GitHub Actions for linting and build verification
-- **100% free** — every component works without a credit card
+Every major voice assistant today is cloud-only, closed, and sends your microphone audio to someone else's datacenter. This project is the opposite: a **streaming, local-first** pipeline you can audit line by line, run disconnected from the internet, and swap components out of.
+
+Design principles:
+
+1. **Local by default, cloud when useful.** Ollama is the default LLM; Groq is a swap for benchmarking / low-RAM hardware.
+2. **Measure before you optimize.** Every phase ships alongside an eval runner and a design doc. No "feels faster" claims — see [ADR 0001](docs/adr/0001-eval-harness.md).
+3. **Small, reversible commits.** Each phase is independently revertible. No big-bang migrations.
+4. **Honest caveats over marketing.** The "cons" section below is longer than the "pros" — on purpose.
 
 ---
 
-## System Architecture
+## Pros and cons (read before adopting)
 
-### High-Level Overview
+### ✅ Pros
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        FRONTEND (React + Vite)                  │
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────────┐  ┌───────────────────┐  │
-│  │ Audio        │  │  VoiceAssistant  │  │   API Service     │  │
-│  │ Recorder     │──│  Component       │──│   (REST + WS)     │  │
-│  │ (WebM/Opus)  │  │  (Chat UI)       │  │                   │  │
-│  └──────────────┘  └──────────────────┘  └────────┬──────────┘  │
-│                                                    │             │
-└────────────────────────────────────────────────────┼─────────────┘
-                                                     │
-                                          HTTP / WebSocket
-                                                     │
-┌────────────────────────────────────────────────────┼─────────────┐
-│                     BACKEND (FastAPI + Uvicorn)     │             │
-│                                                     ▼             │
-│  ┌─────────────────────────────────────────────────────────────┐  │
-│  │                    API Router Layer                          │  │
-│  │                                                             │  │
-│  │  POST /api/pipeline ──── Full voice pipeline (one-shot)     │  │
-│  │  WS   /ws/voice    ──── Real-time streaming pipeline        │  │
-│  │  POST /api/stt/transcribe ── Speech-to-Text only            │  │
-│  │  POST /api/chat/   ──── LLM chat only                       │  │
-│  │  POST /api/tts/synthesize ── Text-to-Speech only            │  │
-│  └─────────┬───────────────────┬───────────────────┬───────────┘  │
-│            │                   │                   │               │
-│            ▼                   ▼                   ▼               │
-│  ┌──────────────┐   ┌──────────────────┐   ┌──────────────┐      │
-│  │  STT Service │   │   LLM Service    │   │  TTS Service │      │
-│  │              │   │                  │   │              │      │
-│  │ Faster-      │   │  Groq API        │   │  Kokoro      │      │
-│  │ Whisper      │   │  (Llama 3.3 70B) │   │  Pipeline    │      │
-│  │              │   │                  │   │              │      │
-│  │ Local model  │   │  Cloud API       │   │  Local model │      │
-│  │ (CPU/GPU)    │   │  (free tier)     │   │  (CPU/GPU)   │      │
-│  └──────────────┘   └──────────────────┘   └──────────────┘      │
-│                                                                   │
-└───────────────────────────────────────────────────────────────────┘
-```
+| What | Why it matters |
+|---|---|
+| **100% offline capable** | No API keys, no cloud, no data egress. `LLM_PROVIDER=ollama` + local STT/TTS. |
+| **Free and open-source end-to-end** | Qwen2.5 (Apache-2.0), Whisper (MIT), Kokoro (Apache-2.0), Piper (MIT), Silero VAD (MIT). No CPML/CC-BY-NC model in the default path. |
+| **Streaming pipeline** | LLM tokens and TTS sentences overlap; first audio byte lands before the full reply has generated. |
+| **Swappable providers** | `LLM_PROVIDER` (ollama \| groq), `TTS_PROVIDER` (kokoro \| piper \| openvoice). Adding a new one is a single class. |
+| **Eval harness built in** | Every claim is measurable: STT WER, LLM keyword-accuracy, TTS RTF, E2E first-audio-byte p50/p95. |
+| **Hardened for exposure** | Opt-in API key, in-memory rate limiter, JSON logging, CORS allowlist. Not just localhost-grade. |
+| **Multilingual TTS path** | Piper voices for Hindi, Tamil, Telugu, Bengali, Marathi, and 30+ others. |
 
-### Data Flow — Full Pipeline
+### ⚠️ Cons / honest caveats
 
-```
-Step 1: CAPTURE
-  Browser MediaRecorder API captures user speech
-  ↓ Audio encoded as WebM/Opus (16kHz, mono, noise suppression)
-
-Step 2: TRANSCRIBE (Faster-Whisper)
-  Audio bytes → WhisperModel.transcribe()
-  ↓ Returns: { text, language, confidence }
-
-Step 3: THINK (Groq / Llama 3.3 70B)
-  System prompt + conversation history + user transcript → Groq API
-  ↓ Returns: AI response text (max 256 tokens, temperature 0.7)
-
-Step 4: SYNTHESIZE (Kokoro TTS)
-  AI response text → KPipeline() → numpy audio array
-  ↓ Returns: WAV audio bytes (24kHz sample rate)
-
-Step 5: RESPOND
-  Backend sends { transcript, response, audio (base64) } to frontend
-  ↓ Frontend displays text + plays audio through browser
-```
-
-### WebSocket Flow (Real-Time Mode)
-
-```
-CLIENT                              SERVER
-  │                                    │
-  │──── WS Connect /ws/voice ────────▶│
-  │                                    │ Initialize conversation_history = []
-  │                                    │
-  │── {"type":"audio","data":"b64"} ──▶│
-  │                                    │── STT transcribe
-  │◀── {"type":"transcript","text":""} │
-  │                                    │── LLM chat (with history)
-  │◀── {"type":"response","text":""}  ─│
-  │                                    │── TTS synthesize
-  │◀── {"type":"audio","data":"b64"}  ─│
-  │                                    │
-  │  (repeat for each utterance)       │
-  │                                    │
-  │── {"type":"clear_history"} ───────▶│
-  │◀── {"type":"history_cleared"} ────│
-  │                                    │
-  │──── WS Disconnect ───────────────▶│
-```
+| What | Impact |
+|---|---|
+| **Local LLM quality < frontier APIs** | Qwen2.5-3B is good but not GPT-4. For deep reasoning, switch `LLM_PROVIDER=groq` or run `qwen2.5:7b` if you have the RAM. |
+| **Sub-500 ms is aspirational, not guaranteed** | Target is <1 s first-audio-byte on CPU + 3B model. <500 ms requires a GPU and careful tuning. See [Benchmarks](#benchmarks--eval-harness). |
+| **Browser AEC is the only echo canceller** | Open-speaker barge-in works because Chrome's `echoCancellation` runs on the mic. Headphones are more reliable. No server-side AEC yet. |
+| **No multi-user concurrency tuning** | Single-user design. Model handles are shared; a second concurrent turn serializes on the TTS thread. |
+| **Voice cloning is scaffolded, not validated** | Phase D' (OpenVoice v2) ships the provider + consent gate, but the model setup + watermarking are a manual one-time step. See [phase-d-notes](docs/design/phase-d-notes.md). |
+| **Raspberry Pi build untested here** | Phase E has the ARM Dockerfile + perf targets but needs a physical Pi to validate. |
+| **Sentence splitter is naive** | "Dr. Smith" may split early. Acceptable in practice; fix is tracked. |
+| **Rate limit is in-memory, single-process** | Swap for Redis if you deploy multiple replicas. |
+| **WebSocket auth not wired by default** | `require_api_key_ws` exists in `app/core/auth.py` but `/ws/voice` doesn't call it yet. One-line change when you deploy. |
+| **`faster-whisper` on CPU is the latency floor** | Real streaming STT (whisper-streaming, Moonshine) would cut 200–500 ms but is deferred. |
 
 ---
 
-## Tech Stack
+## Status
 
-| Layer | Technology | Role | Cost |
-|-------|-----------|------|------|
-| **Speech-to-Text** | [Faster-Whisper](https://github.com/SYSTRAN/faster-whisper) | Transcribe user speech to text | Free (MIT) |
-| **LLM** | [Groq API](https://console.groq.com) + Llama 3.3 70B | Generate intelligent responses | Free tier (14,400 req/day) |
-| **Text-to-Speech** | [Kokoro TTS](https://huggingface.co/hexgrad/Kokoro-82M) | Convert AI text to natural speech | Free (Apache 2.0) |
-| **Backend** | [FastAPI](https://fastapi.tiangolo.com) + Uvicorn | REST API + WebSocket server | Free (MIT) |
-| **Frontend** | [React](https://react.dev) + [Vite](https://vitejs.dev) | Voice UI with chat interface | Free (MIT) |
-| **Containerization** | Docker + Docker Compose | Package and run the full stack | Free |
-| **CI/CD** | GitHub Actions | Automated linting and builds | Free (public repos) |
-| **Backend Hosting** | [HuggingFace Spaces](https://huggingface.co/spaces) | Free CPU/GPU deployment | Free (no card) |
-| **Frontend Hosting** | [Vercel](https://vercel.com) | Free React app hosting + CDN | Free (no card) |
+| Phase | Scope | State | Notes |
+|---|---|---|---|
+| 0 | Eval harness + baseline metrics | ✅ shipped | [docs/adr/0001](docs/adr/0001-eval-harness.md) |
+| A | Ollama provider (local LLM) | ✅ shipped | [docs/adr/0002](docs/adr/0002-llm-provider-abstraction.md) |
+| B.1 | Server-side VAD endpointing | ✅ shipped | [notes](docs/design/phase-b1-notes.md) |
+| B.2 | Sentence-level TTS streaming | ✅ shipped | [notes](docs/design/phase-b2-notes.md) |
+| B.3 | Streaming LLM tokens → sentences | ✅ shipped | [notes](docs/design/phase-b3-notes.md) |
+| B.4 | Continuous mic + server VAD | ⚠️ plumbing only, UI opt-in | [notes](docs/design/phase-b4-notes.md) |
+| B.5 | Barge-in + turn cancellation | ✅ click-during-speaking | [notes](docs/design/phase-b5-notes.md) |
+| 0.5 | Audio hygiene utilities | ✅ shipped | [notes](docs/design/phase-0.5-notes.md) |
+| C | TTS provider abstraction + Piper | ✅ shipped (voice download is manual) | [notes](docs/design/phase-c-notes.md) |
+| D' | OpenVoice v2 cloning scaffold | ⚠️ scaffold, needs validation + checkpoints | [notes](docs/design/phase-d-notes.md) |
+| E | ARM64 edge build | ⚠️ scaffold, needs hardware | [notes](docs/design/phase-e-notes.md) |
+| F | Hardening essentials | ✅ auth, rate limit, CORS, JSON logs, CI | [notes](docs/design/phase-f-notes.md) |
 
-**Total cost: $0**
-
----
-
-## Prerequisites
-
-Before you start, make sure you have:
-
-- **Python 3.11+** — [Download](https://www.python.org/downloads/)
-- **Node.js 20+** — [Download](https://nodejs.org/)
-- **Git** — [Download](https://git-scm.com/downloads)
-- **FFmpeg** — Required by Faster-Whisper
-  - Windows: `winget install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
-  - macOS: `brew install ffmpeg`
-  - Linux: `sudo apt install ffmpeg`
-- **Docker** (optional, for containerized deployment) — [Download](https://www.docker.com/products/docker-desktop/)
+Legend: ✅ runs + tested · ⚠️ builds cleanly but needs user-side validation.
 
 ---
 
-## Quick Start
+## Quickstart
 
-### Option A — Fully local (recommended, no sign-up)
-
-Easiest path is `docker compose up` — it pulls and runs Ollama, downloads `qwen2.5:3b` on first boot, then starts the backend and frontend.
+### Option A — Docker (zero-dep, recommended)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ai-voice-assistant.git
-cd ai-voice-assistant
-cp backend/.env.example backend/.env   # defaults to LLM_PROVIDER=ollama
+git clone https://github.com/<you>/voice-assistant.git
+cd voice-assistant
+cp backend/.env.example backend/.env      # defaults to LLM_PROVIDER=ollama
 docker compose up
 ```
 
-Or run Ollama natively (no Docker needed):
+First boot downloads `qwen2.5:3b` into the `ollama_data` volume (~2 GB). Open http://localhost:5173.
+
+### Option B — Native (Python + Node)
+
+Prerequisites: Python 3.11+, Node 20+, [Ollama](https://ollama.com), `ffmpeg`.
 
 ```bash
-# Install Ollama once: https://ollama.com
-ollama pull qwen2.5:3b           # ~2 GB; runs comfortably on 8 GB RAM
-cd backend && pip install -r requirements.txt && python run.py
-# in another shell:
-cd frontend && npm install && npm run dev
-```
+# Terminal 1 — LLM
+ollama pull qwen2.5:3b
 
-Want a bigger/better model? Set `OLLAMA_MODEL=qwen2.5:7b` (or `llama3.1:8b`) in `backend/.env` and `ollama pull` it.
-
-### Option B — Cloud LLM via Groq (fast, free tier, requires sign-up)
-
-Set `LLM_PROVIDER=groq` in `backend/.env` and add your `GROQ_API_KEY`. Then follow the original steps below.
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/YOUR_USERNAME/ai-voice-assistant.git
-cd ai-voice-assistant
-```
-
-### 2. Get Your Free Groq API Key
-
-1. Go to [console.groq.com](https://console.groq.com)
-2. Sign up (no credit card required)
-3. Go to **API Keys** and create a new key
-4. Copy the key — you'll need it in the next step
-
-### 3. Set Up the Backend
-
-```bash
-# Navigate to backend
+# Terminal 2 — backend
 cd backend
-
-# Create environment file
-cp .env.example .env
-
-# Open .env and paste your Groq API key
-# Replace "your_groq_api_key_here" with your actual key
-
-# Create Python virtual environment
-python -m venv venv
-
-# Activate it
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
-
-# Install dependencies
+python -m venv .venv && . .venv/Scripts/activate    # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
+python run.py                                         # → http://localhost:8000
 
-# Start the backend server
-python run.py
+# Terminal 3 — frontend
+cd frontend
+npm ci
+npm run dev                                           # → http://localhost:5173
 ```
 
-The backend will start at **http://localhost:8000**
-
-Visit **http://localhost:8000/docs** to see the interactive API documentation (Swagger UI).
-
-### 4. Set Up the Frontend (New Terminal)
+### Option C — Cloud LLM (fastest, requires Groq sign-up)
 
 ```bash
-# Navigate to frontend
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start the dev server
-npm run dev
+# backend/.env
+LLM_PROVIDER=groq
+GROQ_API_KEY=<your-free-key-from-console.groq.com>
 ```
 
-The frontend will start at **http://localhost:5173**
-
-### 5. Start Talking
-
-1. Open **http://localhost:5173** in your browser
-2. Click the microphone button
-3. Speak your question
-4. Click the button again to stop recording
-5. Wait for the AI to respond — you'll see the text AND hear the audio
+No Ollama needed. STT + TTS still run locally.
 
 ---
 
-## Project Structure
+## Architecture at a glance
 
-```
-ai-voice-assistant/
-│
-├── backend/                          # Python FastAPI backend
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── config.py                 # Environment variable configuration
-│   │   ├── main.py                   # FastAPI app entry point, CORS, routers
-│   │   ├── services/
-│   │   │   ├── __init__.py
-│   │   │   ├── stt_service.py        # Faster-Whisper speech-to-text
-│   │   │   ├── llm_service.py        # Groq API LLM integration
-│   │   │   └── tts_service.py        # Kokoro text-to-speech
-│   │   └── routers/
-│   │       ├── __init__.py
-│   │       ├── stt.py                # POST /api/stt/transcribe
-│   │       ├── chat.py               # POST /api/chat/
-│   │       ├── tts.py                # POST /api/tts/synthesize
-│   │       └── pipeline.py           # POST /api/pipeline + WS /ws/voice
-│   ├── requirements.txt              # Python dependencies
-│   ├── Dockerfile                    # Backend container image
-│   ├── run.py                        # Dev server quick-start script
-│   ├── .env.example                  # Environment variable template
-│   └── .env                          # Your actual config (git-ignored)
-│
-├── frontend/                         # React + Vite frontend
-│   ├── src/
-│   │   ├── main.jsx                  # React entry point
-│   │   ├── App.jsx                   # Root component
-│   │   ├── App.css                   # Full dark-theme stylesheet
-│   │   ├── index.css                 # Global base styles
-│   │   ├── components/
-│   │   │   └── VoiceAssistant.jsx    # Main voice UI component
-│   │   ├── hooks/
-│   │   │   └── useAudioRecorder.js   # Browser microphone recording hook
-│   │   └── services/
-│   │       └── api.js                # Backend API + WebSocket + audio utils
-│   ├── public/                       # Static assets
-│   ├── package.json                  # Node.js dependencies
-│   ├── vite.config.js                # Vite build configuration
-│   ├── Dockerfile                    # Frontend container (multi-stage)
-│   ├── nginx.conf                    # Production reverse proxy config
-│   └── .env.example                  # Frontend env template
-│
-├── docker-compose.yml                # Full-stack orchestration
-├── .github/
-│   └── workflows/
-│       └── ci.yml                    # GitHub Actions CI pipeline
-├── .gitignore                        # Git ignore rules
-└── README.md                         # This file
+```mermaid
+flowchart LR
+    subgraph Browser["🌐 Browser"]
+        Mic["🎙️ getUserMedia<br/>+ AudioWorklet<br/>(48k → 16k PCM16)"]
+        Player["🔊 StreamingAudioPlayer<br/>(gapless, seq-ordered)"]
+        WS["VoiceWsClient"]
+        Mic --> WS
+        WS --> Player
+    end
+
+    subgraph Backend["⚙️ FastAPI + uvicorn"]
+        MW["Middleware chain<br/>CORS → APIKey<br/>→ RateLimit → Timing"]
+        TM["TurnManager<br/>(1 in-flight turn<br/>cancel on barge-in)"]
+        VAD["FrameVad<br/>(Silero)"]
+        STT["stt_service<br/>(Faster-Whisper)"]
+        Split["IncrementalSentence<br/>Splitter"]
+        LLM["llm_service<br/>.chat_stream"]
+        TTS["tts_service"]
+
+        MW --> TM
+        TM --> VAD
+        VAD --> STT
+        STT --> LLM
+        LLM -.tokens.-> Split
+        Split -.sentence.-> TTS
+    end
+
+    subgraph Models["Providers"]
+        Ollama[("Ollama<br/>local")]
+        Groq[("Groq<br/>cloud opt-in")]
+        Kokoro[("Kokoro<br/>en/ja/zh")]
+        Piper[("Piper<br/>multilingual")]
+    end
+
+    WS <-->|"WebSocket<br/>JSON frames"| MW
+    LLM --> Ollama
+    LLM --> Groq
+    TTS --> Kokoro
+    TTS --> Piper
+
+    classDef ext fill:#eef,stroke:#88a,stroke-width:1px
+    class Ollama,Groq,Kokoro,Piper ext
 ```
 
----
-
-## Backend Deep Dive
-
-### Services Layer
-
-The backend follows a **service-oriented architecture**. Each AI capability is isolated into its own service module with lazy model loading (models are loaded on first request, not at startup).
-
-#### STT Service (`backend/app/services/stt_service.py`)
-
-```python
-# How it works:
-# 1. Loads Faster-Whisper model lazily (cached globally)
-# 2. Accepts raw audio bytes (any format FFmpeg supports)
-# 3. Returns transcript with language detection
-
-transcribe(audio_bytes) → {
-    "text": "Hello, how are you?",
-    "language": "en",
-    "language_probability": 0.98
-}
-```
-
-- **Model**: Whisper `base` by default (configurable: tiny, base, small, medium, large)
-- **Compute**: `int8` quantization on CPU, `float16` on GPU
-- **Beam size**: 5 (balances accuracy and speed)
-- **Languages**: 99+ supported automatically
-
-#### LLM Service (`backend/app/services/llm_service.py`)
-
-```python
-# Two modes:
-# 1. Standard: chat() → returns full response string
-# 2. Streaming: chat_stream() → yields response chunks
-
-chat(user_message, conversation_history) → "I'm doing great! How can I help?"
-```
-
-- **Provider**: Groq (free tier — 14,400 requests/day)
-- **Model**: Llama 3.3 70B Versatile
-- **Temperature**: 0.7 (natural, slightly creative)
-- **Max tokens**: 256 (keeps responses concise for voice)
-- **System prompt**: Configurable, defaults to friendly voice assistant
-
-#### TTS Service (`backend/app/services/tts_service.py`)
-
-```python
-# How it works:
-# 1. Loads Kokoro TTS pipeline lazily
-# 2. Generates speech audio from text
-# 3. Returns WAV bytes at 24kHz
-
-synthesize(text, voice?, speed?) → bytes (WAV audio)
-```
-
-- **Model**: Kokoro 82M parameters
-- **Latency**: <0.3s for typical responses
-- **Sample rate**: 24,000 Hz
-- **Voice**: `af_heart` (American female, configurable)
-- **Speed**: 1.0x (configurable)
-
-### Router Layer
-
-Routers handle HTTP/WebSocket requests and delegate to services.
-
-| Router | Endpoint | Method | Purpose |
-|--------|----------|--------|---------|
-| `stt.py` | `/api/stt/transcribe` | POST | Transcribe audio file |
-| `chat.py` | `/api/chat/` | POST | Send text, get AI response |
-| `tts.py` | `/api/tts/synthesize` | POST | Convert text to speech WAV |
-| `pipeline.py` | `/api/pipeline` | POST | Full voice pipeline (audio in → audio out) |
-| `pipeline.py` | `/ws/voice` | WebSocket | Real-time streaming voice conversation |
-
----
-
-## Frontend Deep Dive
-
-### VoiceAssistant Component
-
-The main UI component manages the entire conversation lifecycle:
-
-```
-State Machine:
-  idle ──(click mic)──▶ recording
-  recording ──(click mic)──▶ processing
-  processing ──(API response)──▶ speaking
-  speaking ──(audio ends)──▶ idle
-```
-
-**Visual indicators**:
-- **Idle**: Gray mic button — "Click to speak"
-- **Recording**: Red pulsing button — "Listening... Click to stop"
-- **Processing**: Amber button — "Thinking..."
-- **Speaking**: Teal button — "Speaking..."
-
-### useAudioRecorder Hook
-
-Handles browser microphone access and audio capture:
-
-- Uses `navigator.mediaDevices.getUserMedia()` for mic access
-- Records as **WebM/Opus** codec (best compression for speech)
-- Audio constraints: 16kHz, mono, echo cancellation, noise suppression
-- Automatically releases microphone on stop
-- Returns a `Blob` for upload to the backend
-
-### API Service
-
-Three ways to communicate with the backend:
-
-1. **Pipeline (REST)** — single request, full round-trip
-2. **Chat (REST)** — text-only conversation
-3. **WebSocket** — persistent connection, real-time streaming
-
----
-
-## API Reference
-
-### `GET /`
-
-Returns API metadata and available endpoints.
-
-**Response:**
-```json
-{
-  "name": "AI Voice Assistant API",
-  "status": "running",
-  "docs": "/docs",
-  "endpoints": {
-    "stt": "POST /api/stt/transcribe",
-    "chat": "POST /api/chat/",
-    "tts": "POST /api/tts/synthesize",
-    "pipeline": "POST /api/pipeline",
-    "websocket": "WS /ws/voice"
-  }
-}
-```
-
-### `GET /health`
-
-Health check endpoint.
-
-**Response:**
-```json
-{ "status": "healthy" }
-```
-
-### `POST /api/stt/transcribe`
-
-Transcribe an audio file to text.
-
-**Request:** `multipart/form-data`
-| Field | Type | Description |
-|-------|------|-------------|
-| `audio` | File | Audio file (WAV, WebM, MP3, etc.) |
-
-**Response:**
-```json
-{
-  "text": "Hello, what is the weather today?",
-  "language": "en",
-  "language_probability": 0.985
-}
-```
-
-### `POST /api/chat/`
-
-Send a text message and get an AI response.
-
-**Request:** `application/json`
-```json
-{
-  "message": "What is the capital of France?",
-  "conversation_history": [
-    { "role": "user", "content": "Hi" },
-    { "role": "assistant", "content": "Hello! How can I help?" }
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "response": "The capital of France is Paris!"
-}
-```
-
-### `POST /api/tts/synthesize`
-
-Convert text to speech audio.
-
-**Request:** `application/json`
-```json
-{
-  "text": "Hello, how are you today?",
-  "voice": "af_heart",
-  "speed": 1.0
-}
-```
-
-**Response:** Binary WAV audio file (`audio/wav`)
-
-### `POST /api/pipeline`
-
-Full voice pipeline — send audio, get transcript + AI response + spoken audio.
-
-**Request:** `multipart/form-data`
-| Field | Type | Description |
-|-------|------|-------------|
-| `audio` | File | Audio recording from the microphone |
-
-**Response:**
-```json
-{
-  "transcript": "What is machine learning?",
-  "response": "Machine learning is a branch of AI where computers learn from data...",
-  "audio": "UklGRi4AAABXQVZFZm10IBAAAA..."
-}
-```
-
-The `audio` field contains base64-encoded WAV data. Decode and play in the browser.
-
----
-
-## WebSocket Protocol
-
-### Connect
-
-```
-ws://localhost:8000/ws/voice
-```
-
-### Client Messages
-
-**Send audio for processing:**
-```json
-{
-  "type": "audio",
-  "data": "<base64-encoded audio bytes>"
-}
-```
-
-**Clear conversation history:**
-```json
-{
-  "type": "clear_history"
-}
-```
-
-### Server Messages
-
-**Transcript (user's speech):**
-```json
-{
-  "type": "transcript",
-  "text": "What's the weather like?"
-}
-```
-
-**AI response text:**
-```json
-{
-  "type": "response",
-  "text": "I don't have access to real-time weather data..."
-}
-```
-
-**AI response audio:**
-```json
-{
-  "type": "audio",
-  "data": "<base64-encoded WAV audio>"
-}
-```
-
-**Error:**
-```json
-{
-  "type": "error",
-  "message": "Description of what went wrong"
-}
-```
-
-**History cleared confirmation:**
-```json
-{
-  "type": "history_cleared"
-}
-```
+Deep dive, tradeoffs, and failure modes: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
 ## Configuration
 
-### Backend Environment Variables
+Everything is env-driven. Full reference in [backend/.env.example](backend/.env.example). The ones you actually change:
 
-Create `backend/.env` from the template:
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GROQ_API_KEY` | *(required)* | Free API key from [console.groq.com](https://console.groq.com) |
-| `WHISPER_MODEL_SIZE` | `base` | Whisper model: `tiny`, `base`, `small`, `medium`, `large` |
-| `WHISPER_DEVICE` | `cpu` | Compute device: `cpu` or `cuda` |
-| `KOKORO_VOICE` | `af_heart` | TTS voice preset |
-| `KOKORO_SPEED` | `1.0` | Speech speed multiplier |
-| `LLM_MODEL` | `llama-3.3-70b-versatile` | Groq model name |
-| `SYSTEM_PROMPT` | *(friendly assistant)* | Custom system prompt for the LLM |
-
-**Whisper model sizes vs. accuracy/speed:**
-
-| Model | Parameters | Disk Size | Relative Speed | WER |
-|-------|-----------|-----------|----------------|-----|
-| `tiny` | 39M | ~75MB | Fastest | ~12% |
-| `base` | 74M | ~140MB | Fast | ~10% |
-| `small` | 244M | ~460MB | Medium | ~8% |
-| `medium` | 769M | ~1.5GB | Slow | ~7% |
-| `large` | 1550M | ~3GB | Slowest | ~5% |
-
-### Frontend Environment Variables
-
-Create `frontend/.env` from the template:
-
-```bash
-cp frontend/.env.example frontend/.env
-```
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VITE_API_URL` | `http://localhost:8000` | Backend API URL |
+| Variable | Default | What it does |
+|---|---|---|
+| `LLM_PROVIDER` | `ollama` | `ollama` (local) \| `groq` (cloud) |
+| `OLLAMA_MODEL` | `qwen2.5:3b` | Try `qwen2.5:7b` on ≥16 GB RAM |
+| `OLLAMA_HOST` | `http://localhost:11434` | Point at a remote Ollama if desired |
+| `GROQ_API_KEY` | *(empty)* | Required when `LLM_PROVIDER=groq` |
+| `TTS_PROVIDER` | `kokoro` | `kokoro` \| `piper` \| `openvoice` |
+| `PIPER_VOICE` | *(empty)* | e.g. `hi_IN-pratham-medium` |
+| `WHISPER_MODEL_SIZE` | `base` | `tiny` / `base` / `small` / `medium` / `large-v3` |
+| `WHISPER_VAD_FILTER` | `true` | Silero VAD trim inside Whisper (B.1) |
+| `API_KEY` | *(empty)* | Set this when deploying publicly |
+| `ALLOWED_ORIGINS` | `*` | Comma-separated list in prod |
+| `RATE_LIMIT_PER_MINUTE` | `60` | `0` disables |
+| `LOG_FORMAT` | `text` | `json` for structured logs |
 
 ---
 
-## Docker Deployment
+## Benchmarks & eval harness
 
-### Run with Docker Compose
+This project takes measurement seriously. Every phase has a reproducible eval.
 
 ```bash
-# Make sure backend/.env exists with your Groq API key
-cp backend/.env.example backend/.env
-# Edit backend/.env and add your GROQ_API_KEY
+# Build the baseline (no server needed for LLM + TTS)
+python -m eval.runners.baseline
 
-# Build and start everything
-docker compose up --build
-
-# Or run in detached mode
-docker compose up --build -d
+# End-to-end streaming latency (server must be running)
+python -m eval.runners.eval_tts --emit-stt-fixtures
+python -m eval.runners.eval_streaming \
+  --url 'ws://127.0.0.1:8000/ws/voice?stream=1' \
+  --fixture eval/datasets/stt/tts-roundtrip-00.wav \
+  --runs 10 --save
 ```
 
-This starts:
-- **Backend** at http://localhost:8000
-- **Frontend** at http://localhost:5173
+Metrics reported:
 
-The frontend nginx config automatically proxies `/api/*` and `/ws/*` to the backend, so everything works through port 5173.
+| Metric | What it captures |
+|---|---|
+| `first_llm_delta_ms` | time to first LLM token (isolates LLM latency) |
+| `first_audio_byte_ms` | time to first TTS chunk (what the user *feels*) |
+| `tts_end_ms` | total turn duration |
+| `mean_wer` | Whisper accuracy on your STT manifest |
+| `mean_rtf` | TTS synth-time / audio-time |
+| `vad_trimmed_ms` | silence removed by Silero VAD |
 
-### Stop
+Results land in `eval/results/*.json` — gitignored, machine-specific. Diff across runs to prove deltas.
 
-```bash
-docker compose down
+Design rationale: [ADR 0001](docs/adr/0001-eval-harness.md).
+
+---
+
+## Project layout
+
 ```
-
-### Build Individual Containers
-
-```bash
-# Backend only
-docker build -t voice-assistant-backend ./backend
-docker run -p 8000:8000 --env-file ./backend/.env voice-assistant-backend
-
-# Frontend only
-docker build -t voice-assistant-frontend ./frontend
-docker run -p 5173:80 voice-assistant-frontend
+.
+├── backend/
+│   ├── app/
+│   │   ├── main.py              # FastAPI app + middleware chain
+│   │   ├── config.py            # All env-driven knobs
+│   │   ├── core/
+│   │   │   ├── auth.py          # APIKeyMiddleware + WS gate
+│   │   │   ├── rate_limit.py    # Token-bucket per-key/IP
+│   │   │   ├── logging.py       # JSON / text formatter
+│   │   │   └── timing.py        # Per-stage X-Stage-*-Ms headers
+│   │   ├── routers/
+│   │   │   └── pipeline.py      # /api/pipeline + /ws/voice
+│   │   ├── services/
+│   │   │   ├── stt_service.py   # Faster-Whisper wrapper
+│   │   │   ├── llm_service.py   # Thin router to llm/ providers
+│   │   │   ├── llm/             # Ollama | Groq providers
+│   │   │   ├── tts_service.py   # Thin router to tts/ providers
+│   │   │   └── tts/             # Kokoro | Piper | OpenVoice
+│   │   ├── streaming/
+│   │   │   ├── async_stream.py  # Sync→async generator bridge
+│   │   │   ├── sentence_splitter.py
+│   │   │   ├── turn_manager.py  # Single in-flight turn + cancel
+│   │   │   ├── vad.py           # Silero frame-VAD
+│   │   │   └── wav.py           # PCM16 → WAV writer
+│   │   └── audio/resample.py    # Hygiene utilities
+│   ├── tests/                   # pytest unit tests
+│   ├── requirements.txt
+│   ├── pyproject.toml           # pytest + ruff config
+│   └── Dockerfile[.arm64]
+├── frontend/
+│   ├── public/recorder-worklet.js
+│   ├── src/
+│   │   ├── audio/               # streamingPlayer, microphoneStream, clientVad
+│   │   ├── services/            # voiceWsClient, consent
+│   │   └── components/          # VoiceAssistant, ConsentGate
+│   └── package.json
+├── eval/
+│   ├── lib/{metrics,reporter}.py
+│   ├── runners/eval_{llm,stt,tts,latency,streaming,baseline}.py
+│   └── datasets/                # Golden Q&A + STT/TTS prompts
+├── docs/
+│   ├── adr/                     # Architecture Decision Records
+│   ├── design/                  # Phase-by-phase notes (B.1–F)
+│   └── design-doc-template.md
+├── docker-compose.yml           # Ollama + backend + frontend
+└── .github/workflows/ci.yml     # Lint + test matrix
 ```
 
 ---
 
-## Free Cloud Deployment
+## API surface
 
-Deploy the entire project for free — no credit card required on any platform.
+### REST
 
-### Backend → Hugging Face Spaces
+- `POST /api/pipeline` — one-shot: audio in, `{transcript, response, audio_b64}` out. Good for eval; simple clients.
+- `POST /api/stt/transcribe`, `POST /api/chat/`, `POST /api/tts/synthesize` — individual stages.
+- `GET /health`, `GET /ready` — liveness / readiness.
 
-1. Create a free account at [huggingface.co](https://huggingface.co)
-2. Create a new Space (select **Docker** as SDK)
-3. Push your backend code:
-   ```bash
-   cd backend
-   git init
-   git remote add space https://huggingface.co/spaces/YOUR_USER/voice-assistant-backend
-   git add .
-   git commit -m "Initial deploy"
-   git push space main
-   ```
-4. Add `GROQ_API_KEY` in Space Settings → Variables
-5. Your backend will be live at `https://YOUR_USER-voice-assistant-backend.hf.space`
+### WebSocket — `/ws/voice`
 
-**ZeroGPU**: For GPU acceleration, add `@spaces.GPU` decorator to your endpoints and HuggingFace provides free H200 GPU slices.
+Query params:
+- `?stream=1` — stream LLM tokens + sentence-level TTS (B.2 + B.3).
+- `?continuous=1` — accept `audio_frame` messages; server VAD detects end-of-turn (B.4).
 
-### Frontend → Vercel
-
-1. Push your project to GitHub
-2. Go to [vercel.com](https://vercel.com) and sign in with GitHub
-3. Click **Import Project** → select your repo
-4. Set:
-   - **Root Directory**: `frontend`
-   - **Build Command**: `npm run build`
-   - **Output Directory**: `dist`
-5. Add environment variable:
-   - `VITE_API_URL` = `https://YOUR_USER-voice-assistant-backend.hf.space`
-6. Click **Deploy**
-
-Your frontend will be live at `https://your-project.vercel.app`
-
-### Alternative Free Hosting Options
-
-| Platform | Best For | Free Tier |
-|----------|----------|-----------|
-| [Render](https://render.com) | Backend | Free web services, auto-deploy from Git |
-| [Railway](https://railway.com) | Backend | $5 free credit on signup, no card |
-| [Netlify](https://netlify.com) | Frontend | Free static hosting + CDN |
+Full protocol, including `barge_in`, `cancelled`, and `llm_delta`, documented in [docs/design/phase-b-streaming-pipeline.md](docs/design/phase-b-streaming-pipeline.md).
 
 ---
 
-## CI/CD Pipeline
+## Roadmap
 
-The project includes a GitHub Actions workflow (`.github/workflows/ci.yml`) that runs on every push and PR to `main`:
+See [CHANGELOG.md](CHANGELOG.md) for what landed in each phase and [docs/design/](docs/design) for the design docs.
 
-### Jobs
-
-| Job | What it does |
-|-----|-------------|
-| `backend-lint` | Installs Python 3.11, runs `ruff check` on backend code |
-| `frontend-build` | Installs Node.js 20, runs `npm ci` and `npm run build` |
-
-### Trigger
-
-```yaml
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+```mermaid
+timeline
+    title Shipping history
+    Phase 0    : Eval harness + baseline metrics
+    Phase A    : Ollama local LLM provider
+    Phase B.1  : Whisper VAD endpointing
+    Phase B.2  : Sentence-level TTS streaming
+    Phase B.3  : LLM token streaming
+    Phase B.4  : Continuous mic (plumbing)
+    Phase B.5  : Barge-in + cancellation
+    Phase 0.5  : Audio hygiene utilities
+    Phase C    : Multilingual TTS (Piper)
+    Phase D'   : Voice cloning scaffold
+    Phase E    : ARM64 edge scaffold
+    Phase F    : Hardening essentials
 ```
 
-Both jobs run in parallel on `ubuntu-latest` for fast feedback.
+Next up (priority order):
+1. Validate B.2/B.3 in a real browser; capture baseline numbers.
+2. Wire B.4 continuous mic into the UI behind a hands-free toggle.
+3. Real-speech fixtures for STT eval (currently TTS-roundtrip only).
+4. Replace in-memory rate limiter with Redis when a second replica is needed.
+5. OpenTelemetry migration for the timing middleware (ADR 0001 follow-up).
 
 ---
 
-## Troubleshooting
+## Documentation
 
-### "Microphone access denied"
+| Doc | When to read it |
+|---|---|
+| [README.md](README.md) | This page — overview + quickstart |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Deep dive, dataflow, failure modes, tradeoffs |
+| [CHANGELOG.md](CHANGELOG.md) | What shipped in each phase |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, style, PR process |
+| [SECURITY.md](SECURITY.md) | Threat model + disclosure policy |
+| [docs/adr/](docs/adr) | Immutable architectural decisions |
+| [docs/design/](docs/design) | Per-phase ship notes (B.1 → F) |
+| [docs/design-doc-template.md](docs/design-doc-template.md) | Template for your next phase |
+| [eval/README.md](eval/README.md) | How to run + read benchmarks |
 
-Your browser needs permission to use the microphone.
-- Click the lock icon in the address bar → allow microphone
-- Make sure you're using HTTPS or `localhost` (mic requires secure context)
+---
 
-### "GROQ_API_KEY is not set"
+## Security
 
-1. Get a free key at [console.groq.com](https://console.groq.com)
-2. Create `backend/.env` and add: `GROQ_API_KEY=your_key_here`
-3. Restart the backend server
-
-### "FFmpeg not found" or Whisper model fails to load
-
-Faster-Whisper requires FFmpeg for audio decoding:
-```bash
-# Windows
-winget install ffmpeg
-
-# macOS
-brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt install ffmpeg
-```
-
-### Backend starts but frontend can't connect
-
-Make sure CORS is working:
-- Backend should be at `http://localhost:8000`
-- Frontend at `http://localhost:5173`
-- Check `VITE_API_URL` in `frontend/.env`
-
-### "No module named 'kokoro'"
-
-Kokoro TTS may need additional dependencies:
-```bash
-pip install kokoro soundfile numpy
-```
-
-### Slow transcription
-
-- Use `WHISPER_MODEL_SIZE=tiny` for fastest results
-- If you have a GPU: set `WHISPER_DEVICE=cuda`
-- Use `WHISPER_MODEL_SIZE=base` (default) for best balance
+- API key gate, rate limiter, CORS allowlist are opt-in (set `API_KEY`, `ALLOWED_ORIGINS`).
+- Mic audio never leaves the box in local mode (`LLM_PROVIDER=ollama`). Verify with the Network tab.
+- No audio retention: server holds the current turn's PCM in memory and drops it.
+- Voice cloning path is gated by a consent modal; see [phase-d-notes](docs/design/phase-d-notes.md).
+- Report vulnerabilities via the process in [SECURITY.md](SECURITY.md). Do not file public issues for security bugs.
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create your feature branch: `git checkout -b feature/my-feature`
-3. Commit your changes: `git commit -m "Add my feature"`
-4. Push to the branch: `git push origin feature/my-feature`
-5. Open a Pull Request
+PRs welcome. Rules:
 
-### Development Tips
+1. Open an issue first for anything non-trivial.
+2. New phases or protocol changes require a design doc in `docs/design/` before code.
+3. Every change that claims a perf or quality delta must include eval-harness numbers in the PR description.
+4. Tests pass, lint clean: `pytest backend/tests` + `npx eslint frontend/src`.
+5. Conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
 
-- Backend auto-reloads on file changes (via `uvicorn --reload`)
-- Frontend auto-reloads via Vite HMR
-- Visit `http://localhost:8000/docs` for interactive API testing
-- Use the individual endpoints (`/api/stt`, `/api/chat`, `/api/tts`) for debugging each stage
+Full guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## License
 
-This project is open source. All tools used are free and open-source:
-
-| Component | License |
-|-----------|---------|
-| Faster-Whisper | MIT |
-| Kokoro TTS | Apache 2.0 |
-| FastAPI | MIT |
-| React | MIT |
-| Vite | MIT |
-| Groq API | Free tier |
+MIT — see [LICENSE](LICENSE). Third-party components retain their own licenses; see the credits block in [ARCHITECTURE.md](ARCHITECTURE.md#credits).
 
 ---
 
-**Built with free and open-source AI. No credit card. No API costs. Just code.**
+## Credits
+
+Built on top of: [Ollama](https://ollama.com), [faster-whisper](https://github.com/SYSTRAN/faster-whisper) / [OpenAI Whisper](https://github.com/openai/whisper), [Kokoro](https://github.com/hexgrad/kokoro), [Piper](https://github.com/rhasspy/piper), [Silero VAD](https://github.com/snakers4/silero-vad), [Qwen](https://github.com/QwenLM/Qwen), [FastAPI](https://fastapi.tiangolo.com), [Vite](https://vitejs.dev), [React](https://react.dev). Thanks to every maintainer above.

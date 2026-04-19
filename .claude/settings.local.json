@@ -10,7 +10,11 @@
       "Bash(npx --yes --prefer-offline eslint src/components/VoiceAssistant.jsx src/services/voiceWsClient.js src/audio/streamingPlayer.js)",
       "Bash(python -m pytest backend/tests -q)",
       "Bash(npx --yes --prefer-offline eslint src/audio/streamingPlayer.js src/audio/clientVad.js src/audio/microphoneStream.js src/services/voiceWsClient.js src/components/VoiceAssistant.jsx src/components/ConsentGate.jsx)",
-      "Bash(npx --yes --prefer-offline eslint src/audio/streamingPlayer.js src/audio/clientVad.js src/audio/microphoneStream.js src/services/voiceWsClient.js src/services/consent.js src/components/VoiceAssistant.jsx src/components/ConsentGate.jsx)"
+      "Bash(npx --yes --prefer-offline eslint src/audio/streamingPlayer.js src/audio/clientVad.js src/audio/microphoneStream.js src/services/voiceWsClient.js src/services/consent.js src/components/VoiceAssistant.jsx src/components/ConsentGate.jsx)",
+      "Bash(python -)",
+      "Bash(npx --yes -p @mermaid-js/mermaid-cli@11 mmdc --version)",
+      "Bash(npx --yes -p @mermaid-js/mermaid-cli@11 mmdc -i ARCHITECTURE-4.mmd -o ARCHITECTURE-4.svg -q)",
+      "Bash(grep -vE \"^\\(npm warn|npm notice|$\\)\")"
     ]
   }
 }
