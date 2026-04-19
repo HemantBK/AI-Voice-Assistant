@@ -63,6 +63,22 @@ secrets/
 .vs/
 
 # =============================================================================
+# Agent / AI-assistant tooling (local state, DO NOT commit)
+# Each of these stores per-machine state: permissions, chat snapshots,
+# tool-use logs, local overrides. Nothing in here is meant to be public.
+# =============================================================================
+.claude/
+.cursor/
+.cursorrules
+.cursorignore
+.aider*
+.continue/
+.windsurf/
+.codeium/
+.roo/
+.roomodes
+
+# =============================================================================
 # OS cruft
 # =============================================================================
 .DS_Store
